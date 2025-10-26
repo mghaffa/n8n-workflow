@@ -21,7 +21,7 @@ const SMTP_HOST      = envTrim("SMTP_HOST");
 const SMTP_PORT_RAW  = envTrim("SMTP_PORT");
 const SMTP_USER      = envTrim("SMTP_USER");
 const SMTP_PASS      = envTrim("SMTP_PASS");
-const OPENAI_MODEL   = envTrim("OPENAI_MODEL", "gpt-4o-mini");
+const OPENAI_MODEL   = envTrim("OPENAI_MODEL", "gpt-4o");
 const XAI_MODEL      = envTrim("XAI_MODEL", "grok-4-fast-reasoning");
 
 const DRY_RUN = process.argv.includes("--dry-run");
