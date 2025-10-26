@@ -1,0 +1,41 @@
+name: Bullet Catalyst (OpenAI + Grok)
+
+on:
+  schedule:
+    # 8:00 AM America/Los_Angeles ≈ 15:00 UTC during DST
+    - cron: "0 15 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install deps
+        run: npm ci || npm i
+
+      - name: Run (dry-run if keys missing)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          XAI_API_KEY:    ${{ secrets.XAI_API_KEY }}
+          EMAIL_FROM:     ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO:       ${{ secrets.EMAIL_TO }}
+          SMTP_HOST:      ${{ secrets.SMTP_HOST }}
+          SMTP_PORT:      ${{ secrets.SMTP_PORT }}
+          SMTP_USER:      ${{ secrets.SMTP_USER }}
+          SMTP_PASS:      ${{ secrets.SMTP_PASS }}
+          OPENAI_MODEL:   gpt-4o-mini
+          XAI_MODEL:      grok-4-fast-reasoning
+        run: |
+          if [ -z "${{ secrets.OPENAI_API_KEY }}" ] || [ -z "${{ secrets.XAI_API_KEY }}" ] || [ -z "${{ secrets.SMTP_PASS }}" ]; then
+            echo "Secrets missing -> running DRY RUN"
+            npm run test-run
+          else
+            npm start
+          fi
