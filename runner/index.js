@@ -1,16 +1,21 @@
-// runner/index.js
-// Bullet Catalyst (GitHub runner) — mirrors your n8n flow
-// 1) Fetch RSS -> 2) Parse tickers -> 3) OpenAI + xAI -> 4) Merge/score -> 5) Markdown -> 6) Email
-// Hardened ticker extraction + trimmed env + SMTP verify.
+// Bullet Catalyst (GitHub runner)
+// 1) Fetch RSS -> 2) Parse tickers -> 3) OpenAI + xAI -> 4) Merge/score
+// 5) Markdown -> 6) Email. Robust logging + tolerant JSON parsing + fallback.
 
 import axios from "axios";
 import nodemailer from "nodemailer";
 import { XMLParser } from "fast-xml-parser";
 import he from "he";
 
+/* --------------------- ENV --------------------- */
 function envTrim(name, def = "") {
   const v = process.env[name];
   return typeof v === "string" ? v.trim() : def;
+}
+function mask(s) {
+  if (!s) return "MISSING";
+  if (s.length <= 8) return "****";
+  return s.slice(0, 3) + "…" + s.slice(-4);
 }
 
 const OPENAI_API_KEY = envTrim("OPENAI_API_KEY");
@@ -23,26 +28,21 @@ const SMTP_USER      = envTrim("SMTP_USER");
 const SMTP_PASS      = envTrim("SMTP_PASS");
 const OPENAI_MODEL   = envTrim("OPENAI_MODEL", "gpt-4o-mini");
 const XAI_MODEL      = envTrim("XAI_MODEL", "grok-4-fast-reasoning");
+const DRY_RUN        = process.argv.includes("--dry-run");
 
-const DRY_RUN = process.argv.includes("--dry-run");
+console.log("[env] OPENAI_API_KEY:", mask(OPENAI_API_KEY));
+console.log("[env] XAI_API_KEY   :", mask(XAI_API_KEY));
 
-// -------------- helpers --------------
+/* ------------------- Helpers ------------------- */
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const stripHtml = (s) => String(s ?? "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
 const decode = (s) => he.decode(String(s || ""));
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 const pick = (arr, n) => arr.slice(0, n);
+function uniqueCaseFold(arr){const seen=new Set();const out=[];for(const v of arr){const k=String(v).toLowerCase().trim();if(!k||seen.has(k))continue;seen.add(k);out.push(v);}return out;}
+function safeHost(u){ try{ return new URL(u).hostname.replace(/^www\./,""); } catch { return ""; } }
 
-function uniqueCaseFold(arr) {
-  const seen = new Set(); const out = [];
-  for (const v of arr) {
-    const k = String(v).toLowerCase().trim();
-    if (!k || seen.has(k)) continue;
-    seen.add(k); out.push(v);
-  }
-  return out;
-}
-
+/* ---------- Name → ticker map + blacklist ---------- */
 const NAME2TICKER = Object.entries({
   'nvidia':'NVDA','intel':'INTC','apple':'AAPL','microsoft':'MSFT',
   'advanced micro devices':'AMD','amd':'AMD','tesla':'TSLA','amazon':'AMZN',
@@ -53,30 +53,18 @@ const NAME2TICKER = Object.entries({
   'toast':'TOST','alibaba':'BABA','baidu':'BIDU','texas instruments':'TXN',
   'micron':'MU','palantir':'PLTR','jpmorgan':'JPM'
 });
-
 const TICKER_BLACKLIST = new Set([
-  "IN","WITH","AND","THE","FOR","FROM","OVER","AFTER","BEFORE","FIRST","SECOND","THIRD",
-  "NEWS","CNBC","CNN","TECH","STOCK","MARKET","EARNINGS","RESULTS","SHARES","OFF","S",
-  "INTEL"
+  "IN","WITH","AND","THE","FOR","FROM","OVER","AFTER","BEFORE","FIRST",
+  "SECOND","THIRD","NEWS","CNBC","CNN","TECH","STOCK","MARKET","EARNINGS",
+  "RESULTS","SHARES","OFF","S","INTEL"
 ]);
 
 function extractTickers(text, url) {
-  const set = new Set();
-  const t = String(text || "");
-  const lower = t.toLowerCase();
-
+  const set = new Set(); const t = String(text || ""); const lower = t.toLowerCase();
   (t.match(/\$([A-Z]{1,5})\b/g) || []).forEach(s => set.add(s.slice(1)));
   (t.match(/\(([A-Z]{1,5})\)/g) || []).forEach(s => set.add(s.replace(/[()]/g, "")));
-
-  for (const [name, sym] of NAME2TICKER) {
-    if (lower.includes(name)) set.add(sym);
-  }
-
-  if (url) {
-    const m = String(url).match(/\/quote\/([A-Z]{1,5})\b/);
-    if (m) set.add(m[1]);
-  }
-
+  for (const [name, sym] of NAME2TICKER) { if (lower.includes(name)) set.add(sym); }
+  if (url) { const m = String(url).match(/\/quote\/([A-Z]{1,5})\b/); if (m) set.add(m[1]); }
   const out = [];
   for (const sym of set) {
     const S = String(sym).toUpperCase().trim();
@@ -87,34 +75,34 @@ function extractTickers(text, url) {
   return out.slice(0, 5);
 }
 
-// -------------- 1) RSS --------------
+/* -------------------- RSS -------------------- */
 async function fetchRss(url, headers = {}) {
   const res = await axios.get(url, { headers, timeout: 45000, validateStatus: () => true });
   if (res.status >= 400) throw new Error(`RSS fetch error ${res.status} for ${url}`);
   return res.data;
 }
 async function fetchAllFeeds() {
-  const UA = { "User-Agent": "Mozilla/5.0", "Accept": "application/rss+xml, text/xml;q=0.9, */*;q=0.8" };
+  const UA = { "User-Agent":"Mozilla/5.0", "Accept":"application/rss+xml, text/xml;q=0.9, */*;q=0.8" };
   const urls = [
     "https://www.cnbc.com/id/100003114/device/rss/rss.html",
     "http://rss.cnn.com/rss/money_latest.rss",
     "https://news.google.com/rss/search?hl=en-US&gl=US&ceid=US:en&q=stocks%20(earnings%20OR%20upgrade%20OR%20guidance%20OR%20contract%20OR%20raise)%20site:(yahoo.com%20OR%20cnbc.com%20OR%20cnn.com)"
   ];
-  const out = [];
+  const out=[];
   for (const u of urls) {
-    try { out.push(await fetchRss(u, UA)); } catch (e) { console.error("[warn] RSS:", u, e.message); }
-    await sleep(300);
+    try { out.push(await fetchRss(u, UA)); }
+    catch(e){ console.error("[warn] RSS:", u, e.message); }
+    await sleep(250);
   }
   return out;
 }
 
-// -------------- 2) Parse / group --------------
 function parseRssItems(xml) {
-  const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "", textNodeName: "text", cdataPropName: "cdata", trimValues: false });
+  const parser = new XMLParser({ ignoreAttributes:false, attributeNamePrefix:"", textNodeName:"text", cdataPropName:"cdata", trimValues:false });
   let json; try { json = parser.parse(xml); } catch { return []; }
   const items = (json?.rss?.channel?.item) || (json?.feed?.entry) || [];
   const list = Array.isArray(items) ? items : [items];
-  const out = [];
+  const out=[];
   for (const it of list) {
     const title = stripHtml(decode(it?.title?.text ?? it?.title ?? ""));
     let link = decode(it?.link?.href ?? it?.link ?? it?.guid ?? "");
@@ -122,60 +110,80 @@ function parseRssItems(xml) {
     if (!link && /href="([^"]+)"/i.test(desc)) link = desc.match(/href="([^"]+)"/i)[1];
     if (!title && !desc) continue;
     const tickers = extractTickers(`${title} ${desc}`, link);
-    out.push({ kind: "news", title, url: link,
-               source: (() => { try { return new URL(link).hostname.replace(/^www\./, ""); } catch { return ""; } })(),
-               snippet: desc, tickers });
+    out.push({ title, url:link, source: safeHost(link), snippet:desc, tickers });
   }
   return out;
 }
+
 function groupByTicker(docs) {
-  const map = new Map();
-  for (const d of docs) {
-    for (const t of (d.tickers || [])) {
-      if (!/^[A-Z]{1,5}$/.test(t)) continue;
-      if (!map.has(t)) map.set(t, []);
-      map.get(t).push(d);
-    }
+  const map=new Map();
+  for (const d of docs) for (const t of (d.tickers||[])) {
+    if (!/^[A-Z]{1,5}$/.test(t)) continue;
+    if (!map.has(t)) map.set(t, []);
+    map.get(t).push(d);
   }
   return map;
 }
 
-// -------------- 3) OpenAI + Grok --------------
+/* ------------- Tolerant JSON parsing ------------- */
+function stripCodeFences(s){ return String(s||"").replace(/```(?:json)?\s*([\s\S]*?)\s*```/i, "$1").trim(); }
+function findJsonObjectWithResults(s){
+  // Try to extract the largest {...} that contains "results"
+  const txt = String(s||"");
+  const idx = txt.indexOf('"results"');
+  if (idx === -1) return null;
+  // Backtrack to nearest '{', forward to matching '}'
+  let start = txt.lastIndexOf("{", idx);
+  if (start === -1) return null;
+  let depth = 0;
+  for (let i=start;i<txt.length;i++){
+    if (txt[i]==="{") depth++;
+    else if (txt[i]==="}") { depth--; if (depth===0) return txt.slice(start, i+1); }
+  }
+  return null;
+}
+function parseProviderJson(s){
+  let t = stripCodeFences(s);
+  try { return JSON.parse(t); } catch {}
+  const chunk = findJsonObjectWithResults(t);
+  if (chunk) { try { return JSON.parse(chunk); } catch {} }
+  // very soft recovery: replace single quotes
+  try { return JSON.parse(t.replace(/(['"])?([a-zA-Z0-9_]+)\1\s*:/g, (m,p1,key)=>`"${key}":`).replace(/'/g,'"')); } catch {}
+  return null;
+}
+
+/* ---------------- OpenAI + Grok ---------------- */
 async function callOpenAI(prompt) {
-  if (!OPENAI_API_KEY) return { results: [] };
+  if (!OPENAI_API_KEY) { console.warn("[warn] OPENAI_API_KEY missing"); return { results: [], _err:"missing key" }; }
   const body = {
     model: OPENAI_MODEL,
-    response_format: {
-      type: "json_schema",
-      json_schema: {
-        name: "TickerBatch",
-        strict: true,
-        schema: {
-          type: "object", required: ["results"], additionalProperties: false,
-          properties: { results: { type: "array", items: {
-            type: "object", required: ["ticker", "sentiment", "catalysts"], additionalProperties: true,
-            properties: { ticker: { type: "string" }, sentiment: { type: "integer", minimum: 0, maximum: 100 }, catalysts: { type: "array", items: { type: "string" } } }
-          }}}
-        }
-      }
-    },
+    response_format: { type:"json_schema", json_schema: { name:"TickerBatch", strict:true, schema:{
+      type:"object", required:["results"], additionalProperties:false,
+      properties:{ results:{ type:"array", items:{ type:"object", required:["ticker","sentiment","catalysts"], additionalProperties:true,
+        properties:{ ticker:{type:"string"}, sentiment:{type:"integer", minimum:0, maximum:100}, catalysts:{type:"array", items:{type:"string"}} } } } }
+    }}},
     messages: [
-      { role: "system", content: "You are an equity options screener. Use ONLY the ticker-scoped headlines/snippets I give you. For EVERY ticker, emit EXACTLY one object. Rate 0–100 for a 3-week call-debit-spread. Catalysts must be specific. Output strict JSON." },
-      { role: "user", content: prompt }
+      { role:"system", content:"You are an equity options screener. Use ONLY the ticker-scoped headlines/snippets I give you. For EVERY ticker, emit EXACTLY one object. Rate 0–100 for a 3-week call-debit-spread. Catalysts must be specific. Output strict JSON." },
+      { role:"user", content: prompt }
     ],
     temperature: 0.2
   };
   const r = await axios.post("https://api.openai.com/v1/chat/completions", body, {
-    headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
-    timeout: 60000, validateStatus: () => true
+    headers: { Authorization:`Bearer ${OPENAI_API_KEY}` }, timeout: 60000, validateStatus: () => true
   });
+  console.log("[openai] status:", r.status);
+  if (r.status !== 200) { console.error("[openai] error:", r.data?.error?.message || r.statusText); return { results: [], _err:`http ${r.status}` }; }
   const content = r?.data?.choices?.[0]?.message?.content || "{}";
-  try { return JSON.parse(content); } catch { return { results: [] }; }
+  const json = parseProviderJson(content);
+  if (!json) { console.error("[openai] JSON parse failed"); return { results: [], _err:"parse" }; }
+  json._ok = true; return json;
 }
+
 async function callGrok(prompt) {
-  if (!XAI_API_KEY) return { results: [] };
+  if (!XAI_API_KEY) { console.warn("[warn] XAI_API_KEY missing"); return { results: [], _err:"missing key" }; }
   const body = {
     model: XAI_MODEL,
+    // If your account/model doesn’t support response_format, comment it out:
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: "You are an equity options screener. Use ONLY the text inside PROMPT CORPUS. Return STRICT JSON {results:[{ticker, sentiment, catalysts, rationale, suggested_spread, confidence}]}." },
@@ -184,14 +192,17 @@ async function callGrok(prompt) {
     temperature: 0.1, top_p: 1, max_tokens: 1200
   };
   const r = await axios.post("https://api.x.ai/v1/chat/completions", body, {
-    headers: { Authorization: `Bearer ${XAI_API_KEY}` },
-    timeout: 60000, validateStatus: () => true
+    headers: { Authorization: `Bearer ${XAI_API_KEY}` }, timeout: 60000, validateStatus: () => true
   });
+  console.log("[grok] status:", r.status);
+  if (r.status !== 200) { console.error("[grok] error:", r.data?.error?.message || r.statusText); return { results: [], _err:`http ${r.status}` }; }
   const content = r?.data?.choices?.[0]?.message?.content || "{}";
-  try { return JSON.parse(content); } catch { return { results: [] }; }
+  const json = parseProviderJson(content);
+  if (!json) { console.error("[grok] JSON parse failed"); return { results: [], _err:"parse" }; }
+  json._ok = true; return json;
 }
 
-// -------------- 4) Merge & score --------------
+/* --------------- Merge & score --------------- */
 function scoreCatalysts(cats = []) {
   let bonus = 0;
   for (const c of cats) {
@@ -207,19 +218,33 @@ function normalizeResults(baseTickers, gpt, grok) {
   for (const T of baseTickers) {
     const a = gptMap.get(T) || {};
     const b = grokMap.get(T) || {};
-    const sGPT = Number.isFinite(Number(a.sentiment)) ? Number(a.sentiment) : 50;
+    const sGPT  = Number.isFinite(Number(a.sentiment)) ? Number(a.sentiment) : 50;
     const sGROK = Number.isFinite(Number(b.sentiment)) ? Number(b.sentiment) : 50;
-    const cats = uniqueCaseFold([...(a.catalysts || []), ...(b.catalysts || [])]);
+    const cats  = uniqueCaseFold([...(a.catalysts || []), ...(b.catalysts || [])]);
     const bonus = 0.1 * scoreCatalysts(cats);
-    out.push({ ticker: T, sentiment_gpt: sGPT, sentiment_grok: sGROK,
-               score_gpt: clamp(sGPT + bonus, 0, 100), score_grok: clamp(sGROK + bonus, 0, 100),
+    out.push({ ticker:T, sentiment_gpt:sGPT, sentiment_grok:sGROK,
+               score_gpt:clamp(sGPT + bonus, 0, 100), score_grok:clamp(sGROK + bonus, 0, 100),
                catalysts: cats });
   }
   return out;
 }
 
-// -------------- 5) Markdown --------------
-function toMarkdown(topGpt, topGrok, newsByTicker) {
+/* --------- Heuristic fallback (news only) --------- */
+function newsOnlyScores(byTicker){
+  const out=[];
+  for (const [t, items] of byTicker.entries()){
+    const text = items.map(x => `${x.title} ${x.snippet}`).join(" ").toLowerCase();
+    let s = 50;
+    if (/\b(beat|upgrade|raise|contract|win|license|record|guidance|ai|chip|backlog)\b/.test(text)) s += 15;
+    if (/\b(downgrade|miss|probe|lawsuit|recall|cut|layoff|guidance cut|halt)\b/.test(text)) s -= 15;
+    const cats = uniqueCaseFold(items.map(i => i.title).slice(0,6));
+    out.push({ ticker:t, sentiment_gpt:s, sentiment_grok:s-2, score_gpt:s, score_grok:s-2, catalysts:cats });
+  }
+  return out;
+}
+
+/* ---------------- Markdown ---------------- */
+function toMarkdown(topGpt, topGrok, newsByTicker, note="") {
   function bulletsFor(t) {
     const raw = (newsByTicker.get(t) || []).map(n => n.title || n.snippet);
     const cats = raw.filter(Boolean).slice(0, 6).map(x => x.replace(/\s*- (CNBC|Yahoo Finance|CNN|Reuters|Bloomberg).*/i, ""));
@@ -236,6 +261,7 @@ function toMarkdown(topGpt, topGrok, newsByTicker) {
     }).join("\n\n");
   }
   return `# Daily Top 10 — Call-Spread Screen (News-driven)
+${note ? `\n> ${note}\n` : ""}
 
 ## Top 10 — GPT
 
@@ -247,42 +273,24 @@ ${fmt(topGrok, "score_grok")}
 `;
 }
 
-// -------------- 6) Email --------------
+/* ---------------- Email ---------------- */
 async function sendEmail(subject, markdown) {
-  const missing = [];
-  for (const k of ["SMTP_HOST","SMTP_PORT","SMTP_USER","SMTP_PASS","EMAIL_FROM","EMAIL_TO"]) {
-    if (!envTrim(k)) missing.push(k);
-  }
+  const missing=[]; for (const k of ["SMTP_HOST","SMTP_PORT","SMTP_USER","SMTP_PASS","EMAIL_FROM","EMAIL_TO"]) { if (!envTrim(k)) missing.push(k); }
   if (missing.length) {
     console.log("[info] email disabled (missing env):", missing.join(", "));
-    console.log("----- MARKDOWN -----\n" + markdown);
+    console.log("----- MARKDOWN -----\n"+markdown);
     return;
   }
-
-  // Decide TLS mode
   const port = Number(SMTP_PORT_RAW || "465");
-  const secure = port === 465; // 465=implicit TLS, 587=STARTTLS
+  const secure = port === 465; // 465 = SSL; 587 = STARTTLS (secure:false)
   console.log(`[smtp] connecting ${SMTP_HOST}:${port} secure=${secure}`);
-
-  const transporter = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port,
-    secure,
-    auth: { user: SMTP_USER, pass: SMTP_PASS }
-  });
-
-  try {
-    await transporter.verify(); // clearer error if credentials are wrong
-    await transporter.sendMail({ from: EMAIL_FROM, to: EMAIL_TO, subject, text: markdown });
-    console.log("[ok] email sent");
-  } catch (err) {
-    console.error("[smtp] send failed:", err?.message || err);
-    console.log("----- MARKDOWN -----\n" + markdown);
-    throw err; // fail the job so you notice
-  }
+  const transporter = nodemailer.createTransport({ host: SMTP_HOST, port, secure, auth: { user: SMTP_USER, pass: SMTP_PASS } });
+  await transporter.verify();
+  await transporter.sendMail({ from: EMAIL_FROM, to: EMAIL_TO, subject, text: markdown });
+  console.log("[ok] email sent");
 }
 
-// -------------- main --------------
+/* ---------------- Main ---------------- */
 async function main() {
   console.log("[run] fetching RSS…");
   const xmls = await fetchAllFeeds();
@@ -297,25 +305,48 @@ async function main() {
     return `=== ${t} ===\n${text || "(no news)"}\n`;
   }).join("\n").slice(0, 16000);
 
-  const openaiPrompt =
-    `PROMPT CORPUS:\n${corpus}\n\n` +
-    "TASK:\nFor EVERY ticker in the CORPUS, output one object with {ticker, sentiment (0–100), catalysts[]}.";
-
-  const grokPrompt =
-    `PROMPT CORPUS:\n${corpus}\n\n` +
-    "TASK:\nDiscover tickers and return TOP 10 objects {ticker, sentiment, catalysts, rationale, suggested_spread, confidence}.";
+  const openaiPrompt = `PROMPT CORPUS:\n${corpus}\n\nTASK:\nFor EVERY ticker in the CORPUS, output one object with {ticker, sentiment (0–100), catalysts[]}.`;
+  const grokPrompt   = `PROMPT CORPUS:\n${corpus}\n\nTASK:\nDiscover tickers and return TOP 10 objects {ticker, sentiment, catalysts, rationale, suggested_spread, confidence}.`;
 
   console.log("[run] calling OpenAI…");
-  const gpt = await (DRY_RUN ? { results: [] } : callOpenAI(openaiPrompt));
+  const gpt  = await (DRY_RUN ? { results: [], _err:"dry" } : callOpenAI(openaiPrompt));
   console.log("[run] calling Grok…");
-  const grok = await (DRY_RUN ? { results: [] } : callGrok(grokPrompt));
+  const grok = await (DRY_RUN ? { results: [], _err:"dry" } : callGrok(grokPrompt));
 
-  const combined = normalizeResults(baseTickers, gpt, grok);
-  const topGpt = pick([...combined].sort((a,b) => b.score_gpt - a.score_gpt), 10);
-  const topGrok = pick([...combined].sort((a,b) => b.score_grok - a.score_grok), 10);
+  console.log(`[debug] gpt results: ${gpt.results?.length ?? 0} (err=${gpt._err ?? "none"})`);
+  console.log(`[debug] grok results: ${grok.results?.length ?? 0} (err=${grok._err ?? "none"})`);
 
-  const md = toMarkdown(topGpt, topGrok, byTicker);
+  let combined;
+  let note = "";
+
+  if (!DRY_RUN && (!Array.isArray(gpt.results) || gpt.results.length === 0) && (!Array.isArray(grok.results) || grok.results.length === 0)) {
+    // Both failed → hard fail so you notice
+    throw new Error("Both providers returned no results. Check API keys, quotas, or model names (see status logs).");
+  } else if (!Array.isArray(gpt.results) || gpt.results.length === 0) {
+    // Grok only
+    note = "OpenAI failed to return structured results; using Grok + news heuristics.";
+    const grokOnly = normalizeResults(baseTickers, {results:[]}, grok);
+    const newsHeur = newsOnlyScores(byTicker);
+    // blend (prioritize grok)
+    const m = new Map(newsHeur.map(x=>[x.ticker,x]));
+    for (const r of grokOnly){ const h=m.get(r.ticker)||{score_gpt:50,score_grok:50}; r.score_gpt=h.score_gpt; r.sentiment_gpt=h.sentiment_gpt; }
+    combined = grokOnly;
+  } else if (!Array.isArray(grok.results) || grok.results.length === 0) {
+    // GPT only
+    note = "Grok failed to return structured results; using OpenAI + news heuristics.";
+    const gptOnly = normalizeResults(baseTickers, gpt, {results:[]});
+    const newsHeur = newsOnlyScores(byTicker);
+    const m = new Map(newsHeur.map(x=>[x.ticker,x]));
+    for (const r of gptOnly){ const h=m.get(r.ticker)||{score_grok:48,score_gpt:50}; r.score_grok=h.score_grok; r.sentiment_grok=h.sentiment_grok; }
+    combined = gptOnly;
+  } else {
+    combined = normalizeResults(baseTickers, gpt, grok);
+  }
+
+  const topGpt   = pick([...combined].sort((a,b) => b.score_gpt  - a.score_gpt ), 10);
+  const topGrok  = pick([...combined].sort((a,b) => b.score_grok - a.score_grok), 10);
+
+  const md = toMarkdown(topGpt, topGrok, byTicker, note);
   await sendEmail(`Top 10 Call-Spread Candidates — GPT & Grok (last ~3w)`, md);
 }
-
 main().catch(e => { console.error(e); process.exit(1); });
