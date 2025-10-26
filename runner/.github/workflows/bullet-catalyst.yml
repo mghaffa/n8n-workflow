@@ -9,7 +9,7 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
 
@@ -18,9 +18,10 @@ jobs:
           node-version: "20"
 
       - name: Install deps
-        run: npm ci || npm i
+        # Avoid npm ci error when no package-lock exists
+        run: npm i
 
-      - name: Run (dry-run if keys missing)
+      - name: Run (dry-run only if env truly missing)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           XAI_API_KEY:    ${{ secrets.XAI_API_KEY }}
@@ -33,8 +34,16 @@ jobs:
           OPENAI_MODEL:   gpt-4o-mini
           XAI_MODEL:      grok-4-fast-reasoning
         run: |
-          if [ -z "${{ secrets.OPENAI_API_KEY }}" ] || [ -z "${{ secrets.XAI_API_KEY }}" ] || [ -z "${{ secrets.SMTP_PASS }}" ]; then
-            echo "Secrets missing -> running DRY RUN"
+          # Show which envs are present (no secret values are printed)
+          for v in OPENAI_API_KEY XAI_API_KEY EMAIL_FROM EMAIL_TO SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASS; do
+            if [ -z "${!v}" ]; then echo "::notice title=ENV::$v is EMPTY"; else echo "::notice title=ENV::$v is set"; fi
+          done
+
+          # Decide DRY RUN based on env (not secrets context)
+          if [ -z "$OPENAI_API_KEY" ] || [ -z "$XAI_API_KEY" ] || \
+             [ -z "$SMTP_HOST" ] || [ -z "$SMTP_PORT" ] || [ -z "$SMTP_USER" ] || \
+             [ -z "$SMTP_PASS" ] || [ -z "$EMAIL_FROM" ] || [ -z "$EMAIL_TO" ]; then
+            echo "Missing env -> DRY RUN"
             npm run test-run
           else
             npm start
