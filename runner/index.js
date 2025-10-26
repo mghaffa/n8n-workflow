@@ -1,6 +1,6 @@
 // Bullet Catalyst (GitHub runner) — mirrors your n8n flow
-// 1) Fetch RSS (CNBC/CNN/Google) -> 2) Parse tickers -> 3) Prompt OpenAI & xAI (Grok)
-// 4) Merge & score -> 5) Markdown -> 6) Email (Gmail SMTP)
+// 1) Fetch RSS -> 2) Parse tickers -> 3) OpenAI + xAI -> 4) Merge/score -> 5) Markdown -> 6) Email
+// Hardened ticker extraction + better SMTP diagnostics.
 
 import axios from "axios";
 import nodemailer from "nodemailer";
@@ -27,8 +27,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const stripHtml = (s) => String(s ?? "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
 const decode = (s) => he.decode(String(s || ""));
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
-
-function pick(arr, n) { return arr.slice(0, n); }
+const pick = (arr, n) => arr.slice(0, n);
 
 function uniqueCaseFold(arr) {
   const seen = new Set(); const out = [];
@@ -40,14 +39,56 @@ function uniqueCaseFold(arr) {
   return out;
 }
 
-function extractTickersFreeform(text) {
-  // $NVDA / (NVDA) / AAPL before stock keywords
+// ---- Company-name → ticker map (same spirit as your n8n flow) ----
+const NAME2TICKER = Object.entries({
+  'nvidia':'NVDA','intel':'INTC','apple':'AAPL','microsoft':'MSFT',
+  'advanced micro devices':'AMD','amd':'AMD','tesla':'TSLA','amazon':'AMZN',
+  'alphabet':'GOOGL','google':'GOOGL','meta':'META','facebook':'META',
+  'broadcom':'AVGO','taiwan semiconductor':'TSM','tsmc':'TSM','netflix':'NFLX',
+  'oracle':'ORCL','salesforce':'CRM','ibm':'IBM','walmart':'WMT','nike':'NKE',
+  'ferrari':'RACE','dell':'DELL','workday':'WDAY','crowdstrike':'CRWD',
+  'toast':'TOST','alibaba':'BABA','baidu':'BIDU','texas instruments':'TXN',
+  'micron':'MU','palantir':'PLTR','jpmorgan':'JPM'
+});
+
+// Common uppercase words that are NOT tickers (to filter false positives)
+const TICKER_BLACKLIST = new Set([
+  "IN","WITH","AND","THE","FOR","FROM","OVER","AFTER","BEFORE","FIRST","SECOND","THIRD",
+  "NEWS","CNBC","CNN","TECH","STOCK","MARKET","EARNINGS","RESULTS","SHARES","OFF","S",
+  "INTEL" // (company name; not ticker)
+]);
+
+function extractTickers(text, url) {
   const set = new Set();
-  (text.match(/\$([A-Z]{1,5})\b/g) || []).forEach(s => set.add(s.slice(1)));
-  (text.match(/\(([A-Z]{1,5})\)/g) || []).forEach(s => set.add(s.replace(/[()]/g, "")));
-  (text.match(/\b([A-Z]{1,5})\b(?=\s+(?:stock|shares|results|earnings|guidance|upgrade|downgrade))/gi) || [])
-    .forEach(s => set.add(s.toUpperCase()));
-  return [...set].filter(t => /^[A-Z]{1,5}$/.test(t)).slice(0, 5);
+  const t = String(text || "");
+  const lower = t.toLowerCase();
+
+  // $SYMB
+  (t.match(/\$([A-Z]{1,5})\b/g) || []).forEach(s => set.add(s.slice(1)));
+
+  // (SYMB)
+  (t.match(/\(([A-Z]{1,5})\)/g) || []).forEach(s => set.add(s.replace(/[()]/g, "")));
+
+  // Company-name → ticker
+  for (const [name, sym] of NAME2TICKER) {
+    if (lower.includes(name)) set.add(sym);
+  }
+
+  // Google/Yahoo quote links …/quote/SYMB…
+  if (url) {
+    const m = String(url).match(/\/quote\/([A-Z]{1,5})\b/);
+    if (m) set.add(m[1]);
+  }
+
+  // Final filter
+  const out = [];
+  for (const sym of set) {
+    const S = String(sym).toUpperCase().trim();
+    if (!/^[A-Z]{1,5}$/.test(S)) continue;
+    if (TICKER_BLACKLIST.has(S)) continue;
+    out.push(S);
+  }
+  return out.slice(0, 5);
 }
 
 // ---------------- 1) Fetch RSS ----------------
@@ -72,7 +113,7 @@ async function fetchAllFeeds() {
   return out;
 }
 
-// ---------------- 2) Parse tickers & group ----------------
+// ---------------- 2) Parse -> group ----------------
 function parseRssItems(xml) {
   const parser = new XMLParser({
     ignoreAttributes: false,
@@ -101,7 +142,7 @@ function parseRssItems(xml) {
     if (!title && !desc) continue;
 
     const text = `${title} ${desc}`;
-    const tickers = extractTickersFreeform(text);
+    const tickers = extractTickers(text, link);
     out.push({
       kind: "news",
       title,
@@ -126,13 +167,7 @@ function groupByTicker(docs) {
   return map;
 }
 
-function prepTickerText(t, docs) {
-  const lines = docs.map(n => `• ${n.title}${n.title && n.snippet ? " — " : ""}${n.snippet}`).join("\n");
-  const newsText = (lines || "(no news)").slice(0, 8000);
-  return { ticker: t, newsText };
-}
-
-// ---------------- 3) Call LLMs (OpenAI + Grok) ----------------
+// ---------------- 3) OpenAI + Grok ----------------
 async function callOpenAI(prompt) {
   if (!OPENAI_API_KEY) return { results: [] };
   const body = {
@@ -278,8 +313,12 @@ ${fmt(topGrok, "score_grok")}
 
 // ---------------- 6) Email ----------------
 async function sendEmail(subject, markdown) {
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !EMAIL_FROM || !EMAIL_TO) {
-    console.log("[info] email disabled (missing SMTP/EMAIL env).");
+  const missing = [];
+  for (const k of ["SMTP_HOST","SMTP_PORT","SMTP_USER","SMTP_PASS","EMAIL_FROM","EMAIL_TO"]) {
+    if (!process.env[k] || String(process.env[k]).trim() === "") missing.push(k);
+  }
+  if (missing.length) {
+    console.log("[info] email disabled (missing env):", missing.join(", "));
     console.log("----- MARKDOWN -----\n" + markdown);
     return;
   }
@@ -339,8 +378,8 @@ async function main() {
   const topGrok = pick([...combined].sort((a,b) => b.score_grok - a.score_grok), 10);
 
   const md = toMarkdown(topGpt, topGrok, byTicker);
-
   const subject = `Top 10 Call-Spread Candidates — GPT & Grok (last ~3w)`;
+
   await sendEmail(subject, md);
 }
 
