@@ -1,28 +1,32 @@
+// runner/index.js
 // Bullet Catalyst (GitHub runner) — mirrors your n8n flow
 // 1) Fetch RSS -> 2) Parse tickers -> 3) OpenAI + xAI -> 4) Merge/score -> 5) Markdown -> 6) Email
-// Hardened ticker extraction + better SMTP diagnostics.
+// Hardened ticker extraction + trimmed env + SMTP verify.
 
 import axios from "axios";
 import nodemailer from "nodemailer";
 import { XMLParser } from "fast-xml-parser";
 import he from "he";
 
-const {
-  OPENAI_API_KEY,
-  XAI_API_KEY,
-  EMAIL_FROM,
-  EMAIL_TO,        // comma-separated ok
-  SMTP_HOST,
-  SMTP_PORT,
-  SMTP_USER,
-  SMTP_PASS,
-  OPENAI_MODEL = "gpt-4o-mini",
-  XAI_MODEL = "grok-4-fast-reasoning",
-} = process.env;
+function envTrim(name, def = "") {
+  const v = process.env[name];
+  return typeof v === "string" ? v.trim() : def;
+}
+
+const OPENAI_API_KEY = envTrim("OPENAI_API_KEY");
+const XAI_API_KEY    = envTrim("XAI_API_KEY");
+const EMAIL_FROM     = envTrim("EMAIL_FROM");
+const EMAIL_TO       = envTrim("EMAIL_TO");
+const SMTP_HOST      = envTrim("SMTP_HOST");
+const SMTP_PORT_RAW  = envTrim("SMTP_PORT");
+const SMTP_USER      = envTrim("SMTP_USER");
+const SMTP_PASS      = envTrim("SMTP_PASS");
+const OPENAI_MODEL   = envTrim("OPENAI_MODEL", "gpt-4o-mini");
+const XAI_MODEL      = envTrim("XAI_MODEL", "grok-4-fast-reasoning");
 
 const DRY_RUN = process.argv.includes("--dry-run");
 
-// ---------------- Helpers ----------------
+// -------------- helpers --------------
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const stripHtml = (s) => String(s ?? "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
 const decode = (s) => he.decode(String(s || ""));
@@ -39,7 +43,6 @@ function uniqueCaseFold(arr) {
   return out;
 }
 
-// ---- Company-name → ticker map (same spirit as your n8n flow) ----
 const NAME2TICKER = Object.entries({
   'nvidia':'NVDA','intel':'INTC','apple':'AAPL','microsoft':'MSFT',
   'advanced micro devices':'AMD','amd':'AMD','tesla':'TSLA','amazon':'AMZN',
@@ -51,11 +54,10 @@ const NAME2TICKER = Object.entries({
   'micron':'MU','palantir':'PLTR','jpmorgan':'JPM'
 });
 
-// Common uppercase words that are NOT tickers (to filter false positives)
 const TICKER_BLACKLIST = new Set([
   "IN","WITH","AND","THE","FOR","FROM","OVER","AFTER","BEFORE","FIRST","SECOND","THIRD",
   "NEWS","CNBC","CNN","TECH","STOCK","MARKET","EARNINGS","RESULTS","SHARES","OFF","S",
-  "INTEL" // (company name; not ticker)
+  "INTEL"
 ]);
 
 function extractTickers(text, url) {
@@ -63,24 +65,18 @@ function extractTickers(text, url) {
   const t = String(text || "");
   const lower = t.toLowerCase();
 
-  // $SYMB
   (t.match(/\$([A-Z]{1,5})\b/g) || []).forEach(s => set.add(s.slice(1)));
-
-  // (SYMB)
   (t.match(/\(([A-Z]{1,5})\)/g) || []).forEach(s => set.add(s.replace(/[()]/g, "")));
 
-  // Company-name → ticker
   for (const [name, sym] of NAME2TICKER) {
     if (lower.includes(name)) set.add(sym);
   }
 
-  // Google/Yahoo quote links …/quote/SYMB…
   if (url) {
     const m = String(url).match(/\/quote\/([A-Z]{1,5})\b/);
     if (m) set.add(m[1]);
   }
 
-  // Final filter
   const out = [];
   for (const sym of set) {
     const S = String(sym).toUpperCase().trim();
@@ -91,13 +87,12 @@ function extractTickers(text, url) {
   return out.slice(0, 5);
 }
 
-// ---------------- 1) Fetch RSS ----------------
+// -------------- 1) RSS --------------
 async function fetchRss(url, headers = {}) {
   const res = await axios.get(url, { headers, timeout: 45000, validateStatus: () => true });
   if (res.status >= 400) throw new Error(`RSS fetch error ${res.status} for ${url}`);
   return res.data;
 }
-
 async function fetchAllFeeds() {
   const UA = { "User-Agent": "Mozilla/5.0", "Accept": "application/rss+xml, text/xml;q=0.9, */*;q=0.8" };
   const urls = [
@@ -113,48 +108,26 @@ async function fetchAllFeeds() {
   return out;
 }
 
-// ---------------- 2) Parse -> group ----------------
+// -------------- 2) Parse / group --------------
 function parseRssItems(xml) {
-  const parser = new XMLParser({
-    ignoreAttributes: false,
-    attributeNamePrefix: "",
-    textNodeName: "text",
-    cdataPropName: "cdata",
-    trimValues: false
-  });
-  let json;
-  try { json = parser.parse(xml); } catch { return []; }
-
-  const items =
-    (json?.rss?.channel?.item) ||
-    (json?.feed?.entry) ||
-    [];
-
+  const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "", textNodeName: "text", cdataPropName: "cdata", trimValues: false });
+  let json; try { json = parser.parse(xml); } catch { return []; }
+  const items = (json?.rss?.channel?.item) || (json?.feed?.entry) || [];
   const list = Array.isArray(items) ? items : [items];
   const out = [];
-
   for (const it of list) {
     const title = stripHtml(decode(it?.title?.text ?? it?.title ?? ""));
     let link = decode(it?.link?.href ?? it?.link ?? it?.guid ?? "");
     let desc = stripHtml(decode(it?.description?.text ?? it?.description ?? it?.summary ?? ""));
     if (!link && /href="([^"]+)"/i.test(desc)) link = desc.match(/href="([^"]+)"/i)[1];
-
     if (!title && !desc) continue;
-
-    const text = `${title} ${desc}`;
-    const tickers = extractTickers(text, link);
-    out.push({
-      kind: "news",
-      title,
-      url: link,
-      source: (() => { try { return new URL(link).hostname.replace(/^www\./, ""); } catch { return ""; } })(),
-      snippet: desc,
-      tickers
-    });
+    const tickers = extractTickers(`${title} ${desc}`, link);
+    out.push({ kind: "news", title, url: link,
+               source: (() => { try { return new URL(link).hostname.replace(/^www\./, ""); } catch { return ""; } })(),
+               snippet: desc, tickers });
   }
   return out;
 }
-
 function groupByTicker(docs) {
   const map = new Map();
   for (const d of docs) {
@@ -167,7 +140,7 @@ function groupByTicker(docs) {
   return map;
 }
 
-// ---------------- 3) OpenAI + Grok ----------------
+// -------------- 3) OpenAI + Grok --------------
 async function callOpenAI(prompt) {
   if (!OPENAI_API_KEY) return { results: [] };
   const body = {
@@ -178,77 +151,47 @@ async function callOpenAI(prompt) {
         name: "TickerBatch",
         strict: true,
         schema: {
-          type: "object",
-          required: ["results"],
-          additionalProperties: false,
-          properties: {
-            results: {
-              type: "array",
-              items: {
-                type: "object",
-                required: ["ticker", "sentiment", "catalysts"],
-                additionalProperties: true,
-                properties: {
-                  ticker: { type: "string" },
-                  sentiment: { type: "integer", minimum: 0, maximum: 100 },
-                  catalysts: { type: "array", items: { type: "string" } }
-                }
-              }
-            }
-          }
+          type: "object", required: ["results"], additionalProperties: false,
+          properties: { results: { type: "array", items: {
+            type: "object", required: ["ticker", "sentiment", "catalysts"], additionalProperties: true,
+            properties: { ticker: { type: "string" }, sentiment: { type: "integer", minimum: 0, maximum: 100 }, catalysts: { type: "array", items: { type: "string" } } }
+          }}}
         }
       }
     },
     messages: [
-      {
-        role: "system",
-        content:
-          "You are an equity options screener. Use ONLY the ticker-scoped headlines/snippets I give you. " +
-          "For EVERY ticker, emit EXACTLY one object. Rate 0–100 for a 3-week call-debit-spread. " +
-          "Catalysts must be specific with numbers/counterparties/events. Output strict JSON."
-      },
+      { role: "system", content: "You are an equity options screener. Use ONLY the ticker-scoped headlines/snippets I give you. For EVERY ticker, emit EXACTLY one object. Rate 0–100 for a 3-week call-debit-spread. Catalysts must be specific. Output strict JSON." },
       { role: "user", content: prompt }
     ],
     temperature: 0.2
   };
   const r = await axios.post("https://api.openai.com/v1/chat/completions", body, {
     headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
-    timeout: 60000,
-    validateStatus: () => true
+    timeout: 60000, validateStatus: () => true
   });
   const content = r?.data?.choices?.[0]?.message?.content || "{}";
   try { return JSON.parse(content); } catch { return { results: [] }; }
 }
-
 async function callGrok(prompt) {
   if (!XAI_API_KEY) return { results: [] };
   const body = {
     model: XAI_MODEL,
     response_format: { type: "json_object" },
     messages: [
-      {
-        role: "system",
-        content:
-          "You are an equity options screener. Use ONLY the text inside PROMPT CORPUS. " +
-          "Return STRICT JSON {results:[{ticker, sentiment, catalysts, rationale, suggested_spread, confidence}]}. " +
-          "sentiment 0–100; confidence 0–100."
-      },
+      { role: "system", content: "You are an equity options screener. Use ONLY the text inside PROMPT CORPUS. Return STRICT JSON {results:[{ticker, sentiment, catalysts, rationale, suggested_spread, confidence}]}." },
       { role: "user", content: prompt }
     ],
-    temperature: 0.1,
-    top_p: 1,
-    max_tokens: 1200
+    temperature: 0.1, top_p: 1, max_tokens: 1200
   };
   const r = await axios.post("https://api.x.ai/v1/chat/completions", body, {
     headers: { Authorization: `Bearer ${XAI_API_KEY}` },
-    timeout: 60000,
-    validateStatus: () => true
+    timeout: 60000, validateStatus: () => true
   });
   const content = r?.data?.choices?.[0]?.message?.content || "{}";
   try { return JSON.parse(content); } catch { return { results: [] }; }
 }
 
-// ---------------- 4) Merge & Score ----------------
+// -------------- 4) Merge & score --------------
 function scoreCatalysts(cats = []) {
   let bonus = 0;
   for (const c of cats) {
@@ -257,7 +200,6 @@ function scoreCatalysts(cats = []) {
   }
   return bonus;
 }
-
 function normalizeResults(baseTickers, gpt, grok) {
   const gptMap = new Map((gpt.results || []).map(r => [String(r.ticker || "").toUpperCase(), r]));
   const grokMap = new Map((grok.results || []).map(r => [String(r.ticker || "").toUpperCase(), r]));
@@ -269,19 +211,14 @@ function normalizeResults(baseTickers, gpt, grok) {
     const sGROK = Number.isFinite(Number(b.sentiment)) ? Number(b.sentiment) : 50;
     const cats = uniqueCaseFold([...(a.catalysts || []), ...(b.catalysts || [])]);
     const bonus = 0.1 * scoreCatalysts(cats);
-    out.push({
-      ticker: T,
-      sentiment_gpt: sGPT,
-      sentiment_grok: sGROK,
-      score_gpt: clamp(sGPT + bonus, 0, 100),
-      score_grok: clamp(sGROK + bonus, 0, 100),
-      catalysts: cats
-    });
+    out.push({ ticker: T, sentiment_gpt: sGPT, sentiment_grok: sGROK,
+               score_gpt: clamp(sGPT + bonus, 0, 100), score_grok: clamp(sGROK + bonus, 0, 100),
+               catalysts: cats });
   }
   return out;
 }
 
-// ---------------- 5) Markdown ----------------
+// -------------- 5) Markdown --------------
 function toMarkdown(topGpt, topGrok, newsByTicker) {
   function bulletsFor(t) {
     const raw = (newsByTicker.get(t) || []).map(n => n.title || n.snippet);
@@ -298,8 +235,7 @@ function toMarkdown(topGpt, topGrok, newsByTicker) {
              catTxt;
     }).join("\n\n");
   }
-  return (
-`# Daily Top 10 — Call-Spread Screen (News-driven)
+  return `# Daily Top 10 — Call-Spread Screen (News-driven)
 
 ## Top 10 — GPT
 
@@ -308,49 +244,53 @@ ${fmt(topGpt, "score_gpt")}
 ## Top 10 — Grok
 
 ${fmt(topGrok, "score_grok")}
-`);
+`;
 }
 
-// ---------------- 6) Email ----------------
+// -------------- 6) Email --------------
 async function sendEmail(subject, markdown) {
   const missing = [];
   for (const k of ["SMTP_HOST","SMTP_PORT","SMTP_USER","SMTP_PASS","EMAIL_FROM","EMAIL_TO"]) {
-    if (!process.env[k] || String(process.env[k]).trim() === "") missing.push(k);
+    if (!envTrim(k)) missing.push(k);
   }
   if (missing.length) {
     console.log("[info] email disabled (missing env):", missing.join(", "));
     console.log("----- MARKDOWN -----\n" + markdown);
     return;
   }
+
+  // Decide TLS mode
+  const port = Number(SMTP_PORT_RAW || "465");
+  const secure = port === 465; // 465=implicit TLS, 587=STARTTLS
+  console.log(`[smtp] connecting ${SMTP_HOST}:${port} secure=${secure}`);
+
   const transporter = nodemailer.createTransport({
     host: SMTP_HOST,
-    port: Number(SMTP_PORT || 465),
-    secure: Number(SMTP_PORT || 465) === 465,
+    port,
+    secure,
     auth: { user: SMTP_USER, pass: SMTP_PASS }
   });
-  await transporter.sendMail({
-    from: EMAIL_FROM,
-    to: EMAIL_TO,
-    subject,
-    text: markdown
-  });
-  console.log("[ok] email sent");
+
+  try {
+    await transporter.verify(); // clearer error if credentials are wrong
+    await transporter.sendMail({ from: EMAIL_FROM, to: EMAIL_TO, subject, text: markdown });
+    console.log("[ok] email sent");
+  } catch (err) {
+    console.error("[smtp] send failed:", err?.message || err);
+    console.log("----- MARKDOWN -----\n" + markdown);
+    throw err; // fail the job so you notice
+  }
 }
 
-// ---------------- Main ----------------
+// -------------- main --------------
 async function main() {
   console.log("[run] fetching RSS…");
   const xmls = await fetchAllFeeds();
   const docs = xmls.flatMap(parseRssItems);
-
   const byTicker = groupByTicker(docs);
   const baseTickers = [...byTicker.keys()];
-  if (!baseTickers.length) {
-    console.log("[warn] no tickers discovered — exiting.");
-    return;
-  }
+  if (!baseTickers.length) { console.log("[warn] no tickers discovered — exiting."); return; }
 
-  // Build a single prompt corpus (like n8n Pre-stringify)
   const corpus = baseTickers.map(t => {
     const news = byTicker.get(t) || [];
     const text = news.map(n => `• ${n.title}${n.title && n.snippet ? " — " : ""}${n.snippet}`).join("\n");
@@ -359,28 +299,23 @@ async function main() {
 
   const openaiPrompt =
     `PROMPT CORPUS:\n${corpus}\n\n` +
-    "TASK:\n" +
-    "For EVERY ticker in the CORPUS, output one object with {ticker, sentiment (0–100), catalysts[]}.";
+    "TASK:\nFor EVERY ticker in the CORPUS, output one object with {ticker, sentiment (0–100), catalysts[]}.";
 
   const grokPrompt =
     `PROMPT CORPUS:\n${corpus}\n\n` +
-    "TASK:\n" +
-    "Discover tickers and return TOP 10 objects {ticker, sentiment, catalysts, rationale, suggested_spread, confidence}.";
+    "TASK:\nDiscover tickers and return TOP 10 objects {ticker, sentiment, catalysts, rationale, suggested_spread, confidence}.";
 
   console.log("[run] calling OpenAI…");
   const gpt = await (DRY_RUN ? { results: [] } : callOpenAI(openaiPrompt));
   console.log("[run] calling Grok…");
   const grok = await (DRY_RUN ? { results: [] } : callGrok(grokPrompt));
 
-  // Normalize/score
   const combined = normalizeResults(baseTickers, gpt, grok);
   const topGpt = pick([...combined].sort((a,b) => b.score_gpt - a.score_gpt), 10);
   const topGrok = pick([...combined].sort((a,b) => b.score_grok - a.score_grok), 10);
 
   const md = toMarkdown(topGpt, topGrok, byTicker);
-  const subject = `Top 10 Call-Spread Candidates — GPT & Grok (last ~3w)`;
-
-  await sendEmail(subject, md);
+  await sendEmail(`Top 10 Call-Spread Candidates — GPT & Grok (last ~3w)`, md);
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
