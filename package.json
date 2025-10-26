@@ -1,0 +1,16 @@
+{
+  "name": "bullet-catalyst-runner",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "runner/index.js",
+  "dependencies": {
+    "axios": "^1.7.4",
+    "nodemailer": "^6.9.13",
+    "he": "^1.2.0",
+    "fast-xml-parser": "^4.5.0"
+  },
+  "scripts": {
+    "start": "node runner/index.js",
+    "test-run": "node runner/index.js --dry-run"
+  }
+}
