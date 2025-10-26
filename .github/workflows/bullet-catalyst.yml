@@ -27,10 +27,10 @@ jobs:
           EMAIL_FROM:     ${{ secrets.EMAIL_FROM }}
           EMAIL_TO:       ${{ secrets.EMAIL_TO }}
           SMTP_HOST:      ${{ secrets.SMTP_HOST }}
-          SMTP_PORT:      ${{ secrets.SMTP_PORT }}
+          SMTP_PORT:      ${{ secrets.SMTP_PORT }}     # "465" for SSL, "587" for STARTTLS
           SMTP_USER:      ${{ secrets.SMTP_USER }}
           SMTP_PASS:      ${{ secrets.SMTP_PASS }}
-          OPENAI_MODEL:   gpt-4o
+          OPENAI_MODEL:   gpt-4o-mini
           XAI_MODEL:      grok-4-fast-reasoning
         run: |
           if [ -z "${{ secrets.OPENAI_API_KEY }}" ] || [ -z "${{ secrets.XAI_API_KEY }}" ] || [ -z "${{ secrets.SMTP_PASS }}" ]; then
