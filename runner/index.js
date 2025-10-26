@@ -1,6 +1,6 @@
-// Bullet Catalyst (GitHub runner)
-// 1) Fetch RSS -> 2) Parse tickers -> 3) OpenAI + xAI -> 4) Merge/score
-// 5) Markdown -> 6) Email. Robust logging + tolerant JSON parsing + fallback.
+// Bullet Catalyst — GitHub runner
+// 1) RSS -> 2) Parse tickers -> 3) OpenAI + xAI -> 4) Merge/score -> 5) Markdown -> 6) Email
+// Robust JSON schema, tolerant parsing, Grok model fallback.
 
 import axios from "axios";
 import nodemailer from "nodemailer";
@@ -8,15 +8,8 @@ import { XMLParser } from "fast-xml-parser";
 import he from "he";
 
 /* --------------------- ENV --------------------- */
-function envTrim(name, def = "") {
-  const v = process.env[name];
-  return typeof v === "string" ? v.trim() : def;
-}
-function mask(s) {
-  if (!s) return "MISSING";
-  if (s.length <= 8) return "****";
-  return s.slice(0, 3) + "…" + s.slice(-4);
-}
+const envTrim = (n, d = "") => (typeof process.env[n] === "string" ? process.env[n].trim() : d);
+const mask = (s) => (!s ? "MISSING" : s.length <= 8 ? "****" : s.slice(0, 3) + "…" + s.slice(-4));
 
 const OPENAI_API_KEY = envTrim("OPENAI_API_KEY");
 const XAI_API_KEY    = envTrim("XAI_API_KEY");
@@ -27,7 +20,7 @@ const SMTP_PORT_RAW  = envTrim("SMTP_PORT");
 const SMTP_USER      = envTrim("SMTP_USER");
 const SMTP_PASS      = envTrim("SMTP_PASS");
 const OPENAI_MODEL   = envTrim("OPENAI_MODEL", "gpt-4o-mini");
-const XAI_MODEL      = envTrim("XAI_MODEL", "grok-4-fast-reasoning");
+const XAI_MODEL      = envTrim("XAI_MODEL", "grok-2-latest");
 const DRY_RUN        = process.argv.includes("--dry-run");
 
 console.log("[env] OPENAI_API_KEY:", mask(OPENAI_API_KEY));
@@ -40,7 +33,7 @@ const decode = (s) => he.decode(String(s || ""));
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 const pick = (arr, n) => arr.slice(0, n);
 function uniqueCaseFold(arr){const seen=new Set();const out=[];for(const v of arr){const k=String(v).toLowerCase().trim();if(!k||seen.has(k))continue;seen.add(k);out.push(v);}return out;}
-function safeHost(u){ try{ return new URL(u).hostname.replace(/^www\./,""); } catch { return ""; } }
+const safeHost = (u)=>{ try{ return new URL(u).hostname.replace(/^www\./,""); } catch { return ""; } };
 
 /* ---------- Name → ticker map + blacklist ---------- */
 const NAME2TICKER = Object.entries({
@@ -125,20 +118,16 @@ function groupByTicker(docs) {
   return map;
 }
 
-/* ------------- Tolerant JSON parsing ------------- */
-function stripCodeFences(s){ return String(s||"").replace(/```(?:json)?\s*([\s\S]*?)\s*```/i, "$1").trim(); }
+/* ------------- tolerant JSON parsing ------------- */
+const stripCodeFences = (s)=>String(s||"").replace(/```(?:json)?\s*([\s\S]*?)\s*```/i,"$1").trim();
 function findJsonObjectWithResults(s){
-  // Try to extract the largest {...} that contains "results"
-  const txt = String(s||"");
-  const idx = txt.indexOf('"results"');
-  if (idx === -1) return null;
-  // Backtrack to nearest '{', forward to matching '}'
-  let start = txt.lastIndexOf("{", idx);
-  if (start === -1) return null;
+  const txt = String(s||""); const idx = txt.indexOf('"results"'); if (idx === -1) return null;
+  let start = txt.lastIndexOf("{", idx); if (start === -1) return null;
   let depth = 0;
   for (let i=start;i<txt.length;i++){
-    if (txt[i]==="{") depth++;
-    else if (txt[i]==="}") { depth--; if (depth===0) return txt.slice(start, i+1); }
+    const ch = txt[i];
+    if (ch === "{") depth++;
+    else if (ch === "}") { depth--; if (depth===0) return txt.slice(start, i+1); }
   }
   return null;
 }
@@ -147,43 +136,72 @@ function parseProviderJson(s){
   try { return JSON.parse(t); } catch {}
   const chunk = findJsonObjectWithResults(t);
   if (chunk) { try { return JSON.parse(chunk); } catch {} }
-  // very soft recovery: replace single quotes
-  try { return JSON.parse(t.replace(/(['"])?([a-zA-Z0-9_]+)\1\s*:/g, (m,p1,key)=>`"${key}":`).replace(/'/g,'"')); } catch {}
+  try { return JSON.parse(t.replace(/(['"])?([a-zA-Z0-9_]+)\1\s*:/g,(m,p1,key)=>`"${key}":`).replace(/'/g,'"')); } catch {}
   return null;
 }
 
-/* ---------------- OpenAI + Grok ---------------- */
+/* ---------------- OpenAI ---------------- */
 async function callOpenAI(prompt) {
   if (!OPENAI_API_KEY) { console.warn("[warn] OPENAI_API_KEY missing"); return { results: [], _err:"missing key" }; }
+
+  // Valid JSON schema for OpenAI strict mode
+  const schema = {
+    name: "TickerBatch",
+    strict: true,
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["results"],
+      properties: {
+        results: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,   // <— the key fix
+            required: ["ticker", "sentiment", "catalysts"],
+            properties: {
+              ticker: { type: "string" },
+              sentiment: { type: "integer", minimum: 0, maximum: 100 },
+              catalysts: { type: "array", items: { type: "string" } }
+            }
+          }
+        }
+      }
+    }
+  };
+
   const body = {
     model: OPENAI_MODEL,
-    response_format: { type:"json_schema", json_schema: { name:"TickerBatch", strict:true, schema:{
-      type:"object", required:["results"], additionalProperties:false,
-      properties:{ results:{ type:"array", items:{ type:"object", required:["ticker","sentiment","catalysts"], additionalProperties:true,
-        properties:{ ticker:{type:"string"}, sentiment:{type:"integer", minimum:0, maximum:100}, catalysts:{type:"array", items:{type:"string"}} } } } }
-    }}},
+    response_format: { type: "json_schema", json_schema: schema },
     messages: [
       { role:"system", content:"You are an equity options screener. Use ONLY the ticker-scoped headlines/snippets I give you. For EVERY ticker, emit EXACTLY one object. Rate 0–100 for a 3-week call-debit-spread. Catalysts must be specific. Output strict JSON." },
       { role:"user", content: prompt }
     ],
     temperature: 0.2
   };
+
   const r = await axios.post("https://api.openai.com/v1/chat/completions", body, {
-    headers: { Authorization:`Bearer ${OPENAI_API_KEY}` }, timeout: 60000, validateStatus: () => true
+    headers: { Authorization:`Bearer ${OPENAI_API_KEY}` },
+    timeout: 60000, validateStatus: () => true
   });
   console.log("[openai] status:", r.status);
-  if (r.status !== 200) { console.error("[openai] error:", r.data?.error?.message || r.statusText); return { results: [], _err:`http ${r.status}` }; }
+  if (r.status !== 200) {
+    console.error("[openai] error:", r.data?.error?.message || r.statusText);
+    return { results: [], _err:`http ${r.status}` };
+  }
   const content = r?.data?.choices?.[0]?.message?.content || "{}";
   const json = parseProviderJson(content);
   if (!json) { console.error("[openai] JSON parse failed"); return { results: [], _err:"parse" }; }
   json._ok = true; return json;
 }
 
-async function callGrok(prompt) {
-  if (!XAI_API_KEY) { console.warn("[warn] XAI_API_KEY missing"); return { results: [], _err:"missing key" }; }
+/* ---------------- Grok (x.ai) with fallback ---------------- */
+const XAI_MODEL_CANDIDATES = (m0) => uniqueCaseFold([m0, "grok-2-latest", "grok-2", "grok-2-mini"]);
+
+async function callGrokOnce(model, prompt) {
   const body = {
-    model: XAI_MODEL,
-    // If your account/model doesn’t support response_format, comment it out:
+    model,
+    // Comment out response_format if your account/model rejects it
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: "You are an equity options screener. Use ONLY the text inside PROMPT CORPUS. Return STRICT JSON {results:[{ticker, sentiment, catalysts, rationale, suggested_spread, confidence}]}." },
@@ -192,14 +210,30 @@ async function callGrok(prompt) {
     temperature: 0.1, top_p: 1, max_tokens: 1200
   };
   const r = await axios.post("https://api.x.ai/v1/chat/completions", body, {
-    headers: { Authorization: `Bearer ${XAI_API_KEY}` }, timeout: 60000, validateStatus: () => true
+    headers: { Authorization: `Bearer ${XAI_API_KEY}` },
+    timeout: 60000, validateStatus: () => true
   });
-  console.log("[grok] status:", r.status);
-  if (r.status !== 200) { console.error("[grok] error:", r.data?.error?.message || r.statusText); return { results: [], _err:`http ${r.status}` }; }
+  console.log(`[grok] status: ${r.status} (model=${model})`);
+  if (r.status !== 200) {
+    return { ok:false, status:r.status, msg:r.data?.error?.message || r.statusText };
+  }
   const content = r?.data?.choices?.[0]?.message?.content || "{}";
   const json = parseProviderJson(content);
-  if (!json) { console.error("[grok] JSON parse failed"); return { results: [], _err:"parse" }; }
-  json._ok = true; return json;
+  if (!json) return { ok:false, status:200, msg:"parse" };
+  json._ok = true; return { ok:true, json };
+}
+
+async function callGrok(prompt) {
+  if (!XAI_API_KEY) { console.warn("[warn] XAI_API_KEY missing"); return { results: [], _err:"missing key" }; }
+  for (const m of XAI_MODEL_CANDIDATES(XAI_MODEL)) {
+    const res = await callGrokOnce(m, prompt);
+    if (res.ok) return res.json;
+    console.error("[grok] error:", res.msg);
+    // 403/404/400 → try next candidate
+    if (![400,403,404].includes(res.status)) break;
+    await sleep(300);
+  }
+  return { results: [], _err:"unavailable" };
 }
 
 /* --------------- Merge & score --------------- */
@@ -282,7 +316,7 @@ async function sendEmail(subject, markdown) {
     return;
   }
   const port = Number(SMTP_PORT_RAW || "465");
-  const secure = port === 465; // 465 = SSL; 587 = STARTTLS (secure:false)
+  const secure = port === 465; // 465 SSL, 587 STARTTLS
   console.log(`[smtp] connecting ${SMTP_HOST}:${port} secure=${secure}`);
   const transporter = nodemailer.createTransport({ host: SMTP_HOST, port, secure, auth: { user: SMTP_USER, pass: SMTP_PASS } });
   await transporter.verify();
@@ -320,24 +354,18 @@ async function main() {
   let note = "";
 
   if (!DRY_RUN && (!Array.isArray(gpt.results) || gpt.results.length === 0) && (!Array.isArray(grok.results) || grok.results.length === 0)) {
-    // Both failed → hard fail so you notice
     throw new Error("Both providers returned no results. Check API keys, quotas, or model names (see status logs).");
   } else if (!Array.isArray(gpt.results) || gpt.results.length === 0) {
-    // Grok only
-    note = "OpenAI failed to return structured results; using Grok + news heuristics.";
+    note = "OpenAI returned no structured results; using Grok + news heuristics.";
     const grokOnly = normalizeResults(baseTickers, {results:[]}, grok);
-    const newsHeur = newsOnlyScores(byTicker);
-    // blend (prioritize grok)
-    const m = new Map(newsHeur.map(x=>[x.ticker,x]));
-    for (const r of grokOnly){ const h=m.get(r.ticker)||{score_gpt:50,score_grok:50}; r.score_gpt=h.score_gpt; r.sentiment_gpt=h.sentiment_gpt; }
+    const newsHeur = new Map(newsOnlyScores(byTicker).map(x=>[x.ticker,x]));
+    for (const r of grokOnly){ const h=newsHeur.get(r.ticker); if (h) { r.score_gpt=h.score_gpt; r.sentiment_gpt=h.sentiment_gpt; } }
     combined = grokOnly;
   } else if (!Array.isArray(grok.results) || grok.results.length === 0) {
-    // GPT only
-    note = "Grok failed to return structured results; using OpenAI + news heuristics.";
+    note = "Grok unavailable; using OpenAI + news heuristics.";
     const gptOnly = normalizeResults(baseTickers, gpt, {results:[]});
-    const newsHeur = newsOnlyScores(byTicker);
-    const m = new Map(newsHeur.map(x=>[x.ticker,x]));
-    for (const r of gptOnly){ const h=m.get(r.ticker)||{score_grok:48,score_gpt:50}; r.score_grok=h.score_grok; r.sentiment_grok=h.sentiment_grok; }
+    const newsHeur = new Map(newsOnlyScores(byTicker).map(x=>[x.ticker,x]));
+    for (const r of gptOnly){ const h=newsHeur.get(r.ticker); if (h) { r.score_grok=h.score_grok; r.sentiment_grok=h.sentiment_grok; } }
     combined = gptOnly;
   } else {
     combined = normalizeResults(baseTickers, gpt, grok);
