@@ -1,4 +1,4 @@
-name: Grok Probe v1
+name: xAI Grok Probe v1 (Only API)
 
 on:
   workflow_dispatch:
