@@ -1,4 +1,4 @@
-name: Bullet Catalyst (OpenAI + Grok)
+name: Bullet Catalyst v0 (OpenAI + Grok)
 
 on:
   schedule:
