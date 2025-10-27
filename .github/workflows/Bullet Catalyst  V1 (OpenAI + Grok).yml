@@ -18,7 +18,7 @@ jobs:
       TOLERANCE_MIN: "10"
 
     steps:
-      - name: Gate — only run near 09:12 Los_Angeles or when manually dispatched
+      - name: Gate — only run near 09:25 Los_Angeles or when manually dispatched
         id: gate
         shell: bash
         run: |
@@ -26,7 +26,7 @@ jobs:
           H=$(TZ=America/Los_Angeles date +'%H')
           M=$(TZ=America/Los_Angeles date +'%M')
           MINUTES=$((10#$H*60 + 10#$M))
-          TARGET=$((7*60 + 30))
+          TARGET=$((9*60 + 25))
           DIFF=$(( MINUTES - TARGET ))
           ABS=${DIFF#-}
           TOL=${TOLERANCE_MIN:-10}
@@ -104,4 +104,4 @@ jobs:
       - name: Skipped (outside window or already ran)
         if: (steps.gate.outputs.ok != 'yes' && github.event_name != 'workflow_dispatch') || steps.cache.outputs.cache-hit == 'true'
         run: |
-          echo "Either not within 09:12±${{ env.TOLERANCE_MIN }} (was ${{ steps.gate.outputs.now }}) or already ran on LA date ${{ steps.runonce.outputs.key }}. Skipping."
+          echo "Either not within 09:25±${{ env.TOLERANCE_MIN }} (was ${{ steps.gate.outputs.now }}) or already ran on LA date ${{ steps.runonce.outputs.key }}. Skipping."
