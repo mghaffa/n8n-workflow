@@ -1,24 +1,25 @@
-name: Bullet Catalyst v1 (OpenAI + Grok) — Option A (wide gate)
+name: Bullet Catalyst v1 (OpenAI + Grok) — Option B (poll + tight gate + run-once)
 
 on:
   schedule:
-    # GitHub cron is UTC. 07:30 America/Los_Angeles is:
-    #   • 14:30 UTC during PDT (UTC-7)
-    #   • 15:30 UTC during PST (UTC-8)
-    - cron: "30 14 * * *"  # summer (PDT)
-    - cron: "30 15 * * *"  # winter (PST)
+    # Poll every 5 minutes during the window that spans 07:00–09:59 LA time depending on DST.
+    # 14–16 UTC ≈ 07–09 LA during PDT and 06–08 LA during PST — wide enough to cover drift.
+    - cron: "*/5 14-16 * * *"
   workflow_dispatch: {}
 
 jobs:
   run:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    concurrency:
+      group: catalyst-0730
+      cancel-in-progress: true
     env:
-      # Allow scheduler drift around 07:30 LA (minutes)
-      TOLERANCE_MIN: "25"
+      # Tight gate — we poll frequently so 10 minutes is plenty
+      TOLERANCE_MIN: "10"
 
     steps:
-      - name: Gate — only run near 08:40 Los_Angeles or when manually dispatched
+      - name: Gate — only run near 08:50 Los_Angeles or when manually dispatched
         id: gate
         shell: bash
         run: |
@@ -29,7 +30,7 @@ jobs:
           TARGET=$((7*60 + 30))
           DIFF=$(( MINUTES - TARGET ))
           ABS=${DIFF#-}
-          TOL=${TOLERANCE_MIN:-25}
+          TOL=${TOLERANCE_MIN:-10}
           if [ "$ABS" -le "$TOL" ]; then OK=yes; else OK=no; fi
           echo "now=$HM" >> "$GITHUB_OUTPUT"
           echo "ok=$OK"  >> "$GITHUB_OUTPUT"
@@ -42,20 +43,40 @@ jobs:
           date -u '+UTC: %Y-%m-%d %H:%M'
           TZ=America/Los_Angeles date '+LA : %Y-%m-%d %H:%M'
 
+      # ----- Run-once-per-day guard (LA date) -----
+      - name: Compute run-once key (LA)
+        id: runonce
+        shell: bash
+        run: |
+          TODAY=$(TZ=America/Los_Angeles date +'%Y-%m-%d')
+          echo "key=$TODAY" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare cache path
+        run: mkdir -p /tmp/catalyst-run-once
+
+      - name: Run-once cache
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/catalyst-run-once
+          key: catalyst-0730-${{ steps.runonce.outputs.key }}
+
+      # ------------------------------------------------
+
       - uses: actions/checkout@v4
-        if: steps.gate.outputs.ok == 'yes' || github.event_name == 'workflow_dispatch'
+        if: (steps.gate.outputs.ok == 'yes' && steps.cache.outputs.cache-hit != 'true') || github.event_name == 'workflow_dispatch'
 
       - uses: actions/setup-node@v4
-        if: steps.gate.outputs.ok == 'yes' || github.event_name == 'workflow_dispatch'
+        if: (steps.gate.outputs.ok == 'yes' && steps.cache.outputs.cache-hit != 'true') || github.event_name == 'workflow_dispatch'
         with:
           node-version: "20"
 
       - name: Install deps
-        if: steps.gate.outputs.ok == 'yes' || github.event_name == 'workflow_dispatch'
+        if: (steps.gate.outputs.ok == 'yes' && steps.cache.outputs.cache-hit != 'true') || github.event_name == 'workflow_dispatch'
         run: npm i --no-audit --no-fund
 
       - name: Run (dry-run if keys missing)
-        if: steps.gate.outputs.ok == 'yes' || github.event_name == 'workflow_dispatch'
+        if: (steps.gate.outputs.ok == 'yes' && steps.cache.outputs.cache-hit != 'true') || github.event_name == 'workflow_dispatch'
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           XAI_API_KEY:    ${{ secrets.XAI_API_KEY }}
@@ -75,6 +96,14 @@ jobs:
             npm start
           fi
 
-      - name: Skipped (not ~08:40 LA)
-        if: steps.gate.outputs.ok != 'yes' && github.event_name != 'workflow_dispatch'
-        run: echo "Not 08:40±${{ env.TOLERANCE_MIN }}min America/Los_Angeles (was ${{ steps.gate.outputs.now }}). Skipping."
+      - name: Mark done today (for cache save)
+        if: (steps.gate.outputs.ok == 'yes' && steps.cache.outputs.cache-hit != 'true') || github.event_name == 'workflow_dispatch'
+        run: |
+          mkdir -p /tmp/catalyst-run-once
+          TZ=America/Los_Angeles date > /tmp/catalyst-run-once/done.txt
+
+      - name: Skipped (outside window or already ran)
+        if: steps.gate.outputs.ok != 'yes' && github.event_name != 'workflow_dispatch' || steps.cache.outputs.cache-hit == 'true'
+        run: |
+          echo "Either not within 08:50±${{ env.TOLERANCE_MIN }} (was ${{ steps.gate.outputs.now }}) \
+or already ran on LA date ${{ steps.runonce.outputs.key }}. Skipping."
