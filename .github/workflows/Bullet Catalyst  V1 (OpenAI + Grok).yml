@@ -1,9 +1,8 @@
-name: Bullet Catalyst v1 (OpenAI + Grok) — Option B (poll + tight gate + run-once)
+name: Bullet Catalyst v1 (OpenAI + Grok) Option B
 
 on:
   schedule:
-    # Poll every 5 minutes during the window that spans 07:00–09:59 LA time depending on DST.
-    # 14–16 UTC ≈ 07–09 LA during PDT and 06–08 LA during PST — wide enough to cover drift.
+    # Poll every 5 minutes across the surrounding UTC hours
     - cron: "*/5 14-16 * * *"
   workflow_dispatch: {}
 
@@ -19,7 +18,7 @@ jobs:
       TOLERANCE_MIN: "10"
 
     steps:
-      - name: Gate — only run near 09:09 Los_Angeles or when manually dispatched
+      - name: Gate — only run near 09:12 Los_Angeles or when manually dispatched
         id: gate
         shell: bash
         run: |
@@ -103,7 +102,6 @@ jobs:
           TZ=America/Los_Angeles date > /tmp/catalyst-run-once/done.txt
 
       - name: Skipped (outside window or already ran)
-        if: steps.gate.outputs.ok != 'yes' && github.event_name != 'workflow_dispatch' || steps.cache.outputs.cache-hit == 'true'
+        if: (steps.gate.outputs.ok != 'yes' && github.event_name != 'workflow_dispatch') || steps.cache.outputs.cache-hit == 'true'
         run: |
-          echo "Either not within 09:09±${{ env.TOLERANCE_MIN }} (was ${{ steps.gate.outputs.now }}) \
-                or already ran on LA date ${{ steps.runonce.outputs.key }}. Skipping."
+          echo "Either not within 09:12±${{ env.TOLERANCE_MIN }} (was ${{ steps.gate.outputs.now }}) or already ran on LA date ${{ steps.runonce.outputs.key }}. Skipping."
