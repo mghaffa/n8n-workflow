@@ -1,0 +1,68 @@
+name: Bullet Catalyst (OpenAI + Grok)
+
+on:
+  schedule:
+    # GitHub cron is UTC. 07:30 America/Los_Angeles is:
+    #   • 14:30 UTC during PDT (UTC-7)
+    #   • 15:30 UTC during PST (UTC-8)
+    - cron: "30 14 * * *"  # covers summer (PDT)
+    - cron: "30 15 * * *"  # covers winter (PST)
+  workflow_dispatch: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Gate: only proceed if it's ~07:30 in America/Los_Angeles (±5 minutes)
+      - name: Gate — only run near 07:30 Los_Angeles or when manually dispatched
+        id: gate
+        shell: bash
+        run: |
+          HM=$(TZ=America/Los_Angeles date +'%H:%M')
+          H=$(TZ=America/Los_Angeles date +'%H')
+          M=$(TZ=America/Los_Angeles date +'%M')
+          MINUTES=$((10#$H*60 + 10#$M))
+          TARGET=$((7*60 + 30))
+          DIFF=$(( MINUTES - TARGET ))
+          [ ${DIFF#-} -le 5 ] && OK=yes || OK=no
+          echo "now=$HM" >> "$GITHUB_OUTPUT"
+          echo "ok=$OK" >> "$GITHUB_OUTPUT"
+          echo "Local time LA: $HM (ok=$OK)"
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.ok == 'yes' || github.event_name == 'workflow_dispatch'
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.ok == 'yes' || github.event_name == 'workflow_dispatch'
+        with:
+          node-version: "20"
+
+      - name: Install deps
+        if: steps.gate.outputs.ok == 'yes' || github.event_name == 'workflow_dispatch'
+        run: npm i --no-audit --no-fund
+
+      - name: Run (dry-run if keys missing)
+        if: steps.gate.outputs.ok == 'yes' || github.event_name == 'workflow_dispatch'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          XAI_API_KEY:    ${{ secrets.XAI_API_KEY }}
+          EMAIL_FROM:     ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO:       ${{ secrets.EMAIL_TO }}
+          SMTP_HOST:      ${{ secrets.SMTP_HOST }}
+          SMTP_PORT:      ${{ secrets.SMTP_PORT }}     # "465" for SSL, "587" for STARTTLS
+          SMTP_USER:      ${{ secrets.SMTP_USER }}
+          SMTP_PASS:      ${{ secrets.SMTP_PASS }}
+          OPENAI_MODEL:   gpt-4o-mini
+          XAI_MODEL:      grok-4-fast-reasoning
+        run: |
+          if [ -z "${{ secrets.OPENAI_API_KEY }}" ] || [ -z "${{ secrets.XAI_API_KEY }}" ] || [ -z "${{ secrets.SMTP_PASS }}" ]; then
+            echo "Secrets missing -> running DRY RUN"
+            npm run test-run
+          else
+            npm start
+          fi
+
+      - name: Skipped (not ~07:30 LA)
+        if: steps.gate.outputs.ok != 'yes' && github.event_name != 'workflow_dispatch'
+        run: echo "Not 07:30±5min America/Los_Angeles (was ${{ steps.gate.outputs.now }}). Skipping."
