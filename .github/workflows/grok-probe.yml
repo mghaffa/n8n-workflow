@@ -1,5 +1,5 @@
-name: xAI Probes
-
+name: xAI Probes (Test Bearer  vs API)
+# at the end we found out that for github to wrok need to use API  (using this test).
 on:
   workflow_dispatch:
     inputs:
