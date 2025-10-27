@@ -10,7 +10,7 @@ on:
         options: [chat, responses]
       model:
         description: "Model ID to test"
-        default: "grok-2-mini"
+        default: "grok-2"
         type: string
 
 jobs:
