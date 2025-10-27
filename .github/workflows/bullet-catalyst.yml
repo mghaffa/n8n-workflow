@@ -18,7 +18,9 @@ jobs:
           node-version: "20"
 
       - name: Install deps
-        run: npm ci || npm i
+        #run: npm ci || npm i
+        run: npm i --no-audit --no-fund
+
 
       - name: Run (dry-run if keys missing)
         env:
