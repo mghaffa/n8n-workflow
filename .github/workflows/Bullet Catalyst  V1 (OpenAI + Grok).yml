@@ -106,4 +106,4 @@ jobs:
         if: steps.gate.outputs.ok != 'yes' && github.event_name != 'workflow_dispatch' || steps.cache.outputs.cache-hit == 'true'
         run: |
           echo "Either not within 09:09±${{ env.TOLERANCE_MIN }} (was ${{ steps.gate.outputs.now }}) \
-          or already ran on LA date ${{ steps.runonce.outputs.key }}. Skipping."
+                or already ran on LA date ${{ steps.runonce.outputs.key }}. Skipping."
