@@ -1,45 +1,33 @@
-name: Grok Probe (xAI connectivity)
+name: xAI Probes
 
 on:
   workflow_dispatch:
     inputs:
-      model:
-        description: "xAI model to test"
-        type: choice
-        options:
-          - grok-2-mini
-          - grok-2
-          - grok-2-latest
-          - grok-4-fast-reasoning
-        default: grok-2-mini
-      auth_scheme:
-        description: "HTTP Authorization scheme (Bearer is correct)"
-        type: choice
-        options:
-          - Bearer
-          - xai-API   # this will intentionally fail; useful to prove scheme matters
-        default: Bearer
       endpoint:
-        description: "Endpoint to hit"
+        description: "Endpoint to test (chat|responses)"
+        default: "chat"
         type: choice
-        options:
-          - chat
-          - responses
-        default: chat
+        options: [chat, responses]
+      model:
+        description: "Model ID to test"
+        default: "grok-2-mini"
+        type: string
 
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Run probe
+      - name: Run list-models
         env:
-          XAI_API_KEY:     ${{ secrets.XAI_API_KEY }}
-          XAI_MODEL:       ${{ github.event.inputs.model }}
-          XAI_AUTH_SCHEME: ${{ github.event.inputs.auth_scheme }}
-          XAI_ENDPOINT:    ${{ github.event.inputs.endpoint }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+        run: node runner/xai_models.mjs
+      - name: Probe selected endpoint
+        env:
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          XAI_ENDPOINT: ${{ github.event.inputs.endpoint }}
+          XAI_MODEL: ${{ github.event.inputs.model }}
         run: node runner/xai_probe.mjs
