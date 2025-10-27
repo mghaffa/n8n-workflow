@@ -27,7 +27,7 @@ const asBool = (v, d=false) => {
 const OPENAI_API_KEY = envTrim("OPENAI_API_KEY");
 const XAI_API_KEY    = envTrim("XAI_API_KEY");
 const OPENAI_MODEL   = envTrim("OPENAI_MODEL", "gpt-4o");
-const XAI_MODEL      = envTrim("XAI_MODEL", "grok-2-mini"); // pick a model your key is entitled to
+const XAI_MODEL      = envTrim("XAI_MODEL", "grok-4-fast-reasoning"); // pick a model your key is entitled to
 
 const EMAIL_FROM     = envTrim("EMAIL_FROM");
 const EMAIL_TO       = envTrim("EMAIL_TO");
