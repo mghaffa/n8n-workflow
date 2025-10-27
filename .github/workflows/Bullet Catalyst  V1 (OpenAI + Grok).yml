@@ -2,8 +2,9 @@ name: Bullet Catalyst v1 (OpenAI + Grok) Option B
 
 on:
   schedule:
-    # Poll every 5 minutes across the surrounding UTC hours
-    - cron: "*/5 14-16 * * *"
+    # Poll every 5 minutes around 09:45 Los_Angeles
+    # 09:45 PDT = 16:45 UTC, 09:45 PST = 17:45 UTC
+    - cron: "*/5 16-17 * * *"
   workflow_dispatch: {}
 
 jobs:
@@ -11,29 +12,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:
-      group: catalyst-0730
+      group: catalyst-0945
       cancel-in-progress: true
     env:
-      # Tight gate — we poll frequently so 10 minutes is plenty
-      TOLERANCE_MIN: "10"
+      # Gate around the target LA time
+      TARGET_H: "9"
+      TARGET_M: "45"
+      TOLERANCE_MIN: "5"   # widen/narrow as you like
 
     steps:
-      - name: Gate — only run near 09:25 Los_Angeles or when manually dispatched
+      - name: Gate — only run near 09:45 Los_Angeles or when manually dispatched
         id: gate
         shell: bash
         run: |
           HM=$(TZ=America/Los_Angeles date +'%H:%M')
           H=$(TZ=America/Los_Angeles date +'%H')
           M=$(TZ=America/Los_Angeles date +'%M')
-          MINUTES=$((10#$H*60 + 10#$M))
-          TARGET=$((9*60 + 25))
-          DIFF=$(( MINUTES - TARGET ))
+          NOW_MIN=$((10#$H*60 + 10#$M))
+          TARGET_MIN=$((10#$TARGET_H*60 + 10#$TARGET_M))
+          DIFF=$(( NOW_MIN - TARGET_MIN ))
           ABS=${DIFF#-}
-          TOL=${TOLERANCE_MIN:-10}
+          TOL=${TOLERANCE_MIN:-15}
           if [ "$ABS" -le "$TOL" ]; then OK=yes; else OK=no; fi
           echo "now=$HM" >> "$GITHUB_OUTPUT"
           echo "ok=$OK"  >> "$GITHUB_OUTPUT"
-          echo "Local time LA: $HM (±${TOL} min -> ok=$OK)"
+          echo "Local time LA: $HM (target ${TARGET_H}:${TARGET_M}, ±${TOL} -> ok=$OK)"
 
       - name: Debug event/time
         run: |
@@ -58,7 +61,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/catalyst-run-once
-          key: catalyst-0730-${{ steps.runonce.outputs.key }}
+          key: catalyst-0945-${{ steps.runonce.outputs.key }}
 
       # ------------------------------------------------
 
@@ -104,4 +107,4 @@ jobs:
       - name: Skipped (outside window or already ran)
         if: (steps.gate.outputs.ok != 'yes' && github.event_name != 'workflow_dispatch') || steps.cache.outputs.cache-hit == 'true'
         run: |
-          echo "Either not within 09:25±${{ env.TOLERANCE_MIN }} (was ${{ steps.gate.outputs.now }}) or already ran on LA date ${{ steps.runonce.outputs.key }}. Skipping."
+          echo "Either not within ${TARGET_H}:${TARGET_M}±${{ env.TOLERANCE_MIN }} (was ${{ steps.gate.outputs.now }}) or already ran on LA date ${{ steps.runonce.outputs.key }}. Skipping."
