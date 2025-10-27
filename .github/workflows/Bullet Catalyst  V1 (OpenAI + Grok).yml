@@ -2,8 +2,8 @@ name: Bullet Catalyst v1 (OpenAI + Grok) Option B
 
 on:
   schedule:
-    # Poll every 5 minutes around 09:45 Los_Angeles
-    # 09:45 PDT = 16:45 UTC, 09:45 PST = 17:45 UTC
+    # Poll every 5 minutes around 10:15 Los_Angeles
+    # 10:15 PDT = 16:15 UTC, 10:15 PST = 17:15 UTC
     - cron: "*/5 16-17 * * *"
   workflow_dispatch: {}
 
@@ -12,16 +12,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:
-      group: catalyst-0945
+      group: catalyst-1015
       cancel-in-progress: true
     env:
       # Gate around the target LA time
-      TARGET_H: "9"
-      TARGET_M: "45"
-      TOLERANCE_MIN: "5"   # widen/narrow as you like
+      TARGET_H: "10"
+      TARGET_M: "15"
+      TOLERANCE_MIN: "15"   # widen/narrow as you like
 
     steps:
-      - name: Gate — only run near 09:45 Los_Angeles or when manually dispatched
+      - name: Gate — only run near 10:15 Los_Angeles or when manually dispatched
         id: gate
         shell: bash
         run: |
@@ -61,7 +61,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/catalyst-run-once
-          key: catalyst-0945-${{ steps.runonce.outputs.key }}
+          key: catalyst-1015-${{ steps.runonce.outputs.key }}
 
       # ------------------------------------------------
 
