@@ -1,36 +1,69 @@
-name: Grok Probe (xAI connectivity)
+// runner/xai_probe.js
+import axios from "axios";
 
-on:
-  workflow_dispatch:
-    inputs:
-      model:
-        description: "xAI model to test"
-        required: true
-        default: "grok-2-mini"
-      auth_scheme:
-        description: "HTTP Authorization scheme (Bearer is correct)"
-        type: choice
-        options: [Bearer, xai-API]
-        default: Bearer
-      endpoint:
-        description: "Endpoint to hit"
-        type: choice
-        options: [chat, responses]
-        default: chat
+const key   = (process.env.XAI_API_KEY || "").trim();
+const model = (process.env.XAI_MODEL || "grok-2-mini").trim();
+const scheme = (process.env.XAI_AUTH_SCHEME || "Bearer").trim(); // should be "Bearer"
+const endpoint = (process.env.XAI_ENDPOINT || "chat").trim();    // "chat" or "responses"
 
-jobs:
-  probe:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - name: Run probe
-        env:
-          XAI_API_KEY:    ${{ secrets.XAI_API_KEY }}
-          XAI_MODEL:      ${{ github.event.inputs.model }}
-          XAI_AUTH_SCHEME:${{ github.event.inputs.auth_scheme }}
-          XAI_ENDPOINT:   ${{ github.event.inputs.endpoint }}
-        run: node runner/xai_probe.js
+if (!key) {
+  console.error("[probe] XAI_API_KEY is missing.");
+  process.exit(10);
+}
+
+const url = endpoint === "responses"
+  ? "https://api.x.ai/v1/responses"
+  : "https://api.x.ai/v1/chat/completions";
+
+const headers = {
+  "Authorization": `${scheme} ${key}`,
+  "Content-Type": "application/json"
+};
+
+const body =
+  endpoint === "responses"
+    ? {
+        model,
+        input: [
+          {
+            role: "user",
+            content: [{ type: "text", text: "Ping from GitHub Actions. Reply 'ok'." }]
+          }
+        ],
+        max_output_tokens: 64
+      }
+    : {
+        model,
+        messages: [
+          { role: "system", content: "You are a simple echo bot. Reply with 'ok'." },
+          { role: "user", content: "Ping from GitHub Actions." }
+        ],
+        temperature: 0,
+        max_tokens: 32
+      };
+
+(async () => {
+  console.log(`[probe] POST ${url}`);
+  console.log(`[probe] Model=${model} | Auth-Scheme=${scheme}`);
+  try {
+    const r = await axios.post(url, body, { headers, timeout: 30000, validateStatus: () => true });
+    console.log(`[probe] HTTP ${r.status}`);
+    if (r.status === 200) {
+      const msg =
+        r.data?.choices?.[0]?.message?.content ??
+        r.data?.output?.[0]?.content?.[0]?.text ??
+        JSON.stringify(r.data).slice(0, 160);
+      console.log("[probe] OK. Sample:", String(msg).slice(0, 120));
+      process.exit(0);
+    } else {
+      const err = r.data?.error?.message || r.statusText || "Unknown";
+      console.error("[probe] ERROR:", err);
+      if (r.status === 401) process.exit(2);  // bad key / bad scheme
+      if (r.status === 403) process.exit(3);  // no entitlement to model
+      process.exit(4);
+    }
+  } catch (e) {
+    console.error("[probe] EXCEPTION:", e.message);
+    process.exit(5);
+  }
+})();
