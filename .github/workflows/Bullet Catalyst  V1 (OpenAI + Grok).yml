@@ -1,21 +1,24 @@
-name: Bullet Catalyst v1 (OpenAI + Grok)
+name: Bullet Catalyst v1 (OpenAI + Grok) — Option A (wide gate)
 
 on:
   schedule:
     # GitHub cron is UTC. 07:30 America/Los_Angeles is:
     #   • 14:30 UTC during PDT (UTC-7)
     #   • 15:30 UTC during PST (UTC-8)
-    - cron: "30 14 * * *"  # covers summer (PDT)
-    - cron: "30 15 * * *"  # covers winter (PST)
+    - cron: "30 14 * * *"  # summer (PDT)
+    - cron: "30 15 * * *"  # winter (PST)
   workflow_dispatch: {}
 
 jobs:
   run:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      # Allow scheduler drift around 07:30 LA (minutes)
+      TOLERANCE_MIN: "25"
+
     steps:
-      # Gate: only proceed if it's ~07:30 in America/Los_Angeles (±5 minutes)
-      - name: Gate — only run near 07:30 Los_Angeles or when manually dispatched
+      - name: Gate — only run near 08:40 Los_Angeles or when manually dispatched
         id: gate
         shell: bash
         run: |
@@ -25,10 +28,19 @@ jobs:
           MINUTES=$((10#$H*60 + 10#$M))
           TARGET=$((7*60 + 30))
           DIFF=$(( MINUTES - TARGET ))
-          [ ${DIFF#-} -le 5 ] && OK=yes || OK=no
+          ABS=${DIFF#-}
+          TOL=${TOLERANCE_MIN:-25}
+          if [ "$ABS" -le "$TOL" ]; then OK=yes; else OK=no; fi
           echo "now=$HM" >> "$GITHUB_OUTPUT"
-          echo "ok=$OK" >> "$GITHUB_OUTPUT"
-          echo "Local time LA: $HM (ok=$OK)"
+          echo "ok=$OK"  >> "$GITHUB_OUTPUT"
+          echo "Local time LA: $HM (±${TOL} min -> ok=$OK)"
+
+      - name: Debug event/time
+        run: |
+          echo "event=${{ github.event_name }}"
+          echo "cron='${{ github.event.schedule }}'"
+          date -u '+UTC: %Y-%m-%d %H:%M'
+          TZ=America/Los_Angeles date '+LA : %Y-%m-%d %H:%M'
 
       - uses: actions/checkout@v4
         if: steps.gate.outputs.ok == 'yes' || github.event_name == 'workflow_dispatch'
@@ -63,6 +75,6 @@ jobs:
             npm start
           fi
 
-      - name: Skipped (not ~07:30 LA)
+      - name: Skipped (not ~08:40 LA)
         if: steps.gate.outputs.ok != 'yes' && github.event_name != 'workflow_dispatch'
-        run: echo "Not 07:30±5min America/Los_Angeles (was ${{ steps.gate.outputs.now }}). Skipping."
+        run: echo "Not 08:40±${{ env.TOLERANCE_MIN }}min America/Los_Angeles (was ${{ steps.gate.outputs.now }}). Skipping."
