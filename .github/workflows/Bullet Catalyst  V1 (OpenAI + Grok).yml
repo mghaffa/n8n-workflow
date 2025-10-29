@@ -14,12 +14,12 @@ jobs:
       group: catalyst-0730
       cancel-in-progress: true
     env:
-      # Gate around the target LA time (11:05 PST/PDT = 14:05 ET/EDT)
+      # Gate around the target LA time (7:30  PST/PDT = 14:05 ET/EDT)
       TARGET_H: "7"
       TARGET_M: "30"
       TOLERANCE_MIN: "5" # ±5 min window
     steps:
-      - name: Gate — only run near 11:05 Los_Angeles or when manually dispatched
+      - name: Gate — only run near 7:30  Los_Angeles or when manually dispatched
         id: gate
         shell: bash
         run: |
