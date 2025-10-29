@@ -14,10 +14,10 @@ jobs:
     env:
       # Gate around the target LA time (11:05 PST/PDT = 14:05 ET/EDT)
       TARGET_H: "12"
-      TARGET_M: "15"
+      TARGET_M: "25"
       TOLERANCE_MIN: "15" # Increased to ±15 min for delay tolerance
     steps:
-      - name: Gate — only run near 11:05 Los_Angeles or when manually dispatched
+      - name: Gate — only run near 12:25 Los_Angeles or when manually dispatched
         id: gate
         shell: bash
         run: |
