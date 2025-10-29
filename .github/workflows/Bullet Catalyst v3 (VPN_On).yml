@@ -1,0 +1,127 @@
+name: Bullet Catalyst v3 (VPN_On)
+
+on:
+  schedule:
+    # Poll every 5 min during UTC window covering 12:45 LA ± tol (PDT/PST)
+    # 12:45 PDT = 19:45 UTC, 12:45 PST = 20:45 UTC
+    - cron: "*/5 19-21 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: catalyst-1245
+      cancel-in-progress: true
+
+    env:
+      # Gate around the target LA time (12:45 PST/PDT = 15:45 ET/EDT)
+      TARGET_H: "12"
+      TARGET_M: "55"
+      TOLERANCE_MIN: "15"    # ±15 min window
+
+    steps:
+      - name: Gate — only run near 12:55 Los_Angeles (schedule) or always when manually dispatched
+        id: gate
+        shell: bash
+        run: |
+          HM=$(TZ=America/Los_Angeles date +'%H:%M')
+          H=$(TZ=America/Los_Angeles date +'%H')
+          M=$(TZ=America/Los_Angeles date +'%M')
+          NOW_MIN=$((10#$H*60 + 10#$M))
+          TARGET_MIN=$((10#$TARGET_H*60 + 10#$TARGET_M))
+          DIFF=$(( NOW_MIN - TARGET_MIN ))
+          ABS=${DIFF#-}
+          TOL=${TOLERANCE_MIN:-15}
+          if [ "$ABS" -le "$TOL" ]; then OK=yes; else OK=no; fi
+          {
+            echo "now=$HM"
+            echo "ok=$OK"
+          } >> "$GITHUB_OUTPUT"
+          echo "LA time: $HM (target ${TARGET_H}:${TARGET_M} ±${TOL}m) -> ok=$OK"
+
+      - name: Debug event/time
+        run: |
+          echo "event=${{ github.event_name }}"
+          echo "cron='${{ github.event.schedule }}'"
+          date -u '+UTC: %Y-%m-%d %H:%M'
+          TZ=America/Los_Angeles date '+LA : %Y-%m-%d %H:%M'
+          TZ=America/New_York   date '+NY : %Y-%m-%d %H:%M'
+
+      # ----- Run-once-per-day guard (LA date) -----
+      - name: Compute run-once key (LA)
+        id: runonce
+        shell: bash
+        run: |
+          TODAY=$(TZ=America/Los_Angeles date +'%Y-%m-%d')
+          echo "key=$TODAY" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare cache path
+        run: mkdir -p /tmp/catalyst-run-once
+
+      - name: Run-once cache (restore)
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/catalyst-run-once
+          key: catalyst-1245-${{ steps.runonce.outputs.key }}
+
+      # ------------------------------------------------
+      # Heavy steps: run if (scheduled AND in-window AND not already ran today) OR manual dispatch
+      - uses: actions/checkout@v4
+        if: (github.event_name == 'schedule'  && steps.gate.outputs.ok == 'yes' && steps.cache.outputs.cache-hit != 'true')
+            || github.event_name == 'workflow_dispatch'
+
+      - uses: actions/setup-node@v4
+        if: (github.event_name == 'schedule'  && steps.gate.outputs.ok == 'yes' && steps.cache.outputs.cache-hit != 'true')
+            || github.event_name == 'workflow_dispatch'
+        with:
+          node-version: "20"
+
+      - name: Install deps
+        if: (github.event_name == 'schedule'  && steps.gate.outputs.ok == 'yes' && steps.cache.outputs.cache-hit != 'true')
+            || github.event_name == 'workflow_dispatch'
+        run: npm i --no-audit --no-fund
+
+      - name: Run (dry-run if keys missing)
+        if: (github.event_name == 'schedule'  && steps.gate.outputs.ok == 'yes' && steps.cache.outputs.cache-hit != 'true')
+            || github.event_name == 'workflow_dispatch'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          XAI_API_KEY:    ${{ secrets.XAI_API_KEY }}
+          EMAIL_FROM:     ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO:       ${{ secrets.EMAIL_TO }}
+          SMTP_HOST:      ${{ secrets.SMTP_HOST }}
+          SMTP_PORT:      ${{ secrets.SMTP_PORT }}     # "465" for SSL, "587" for STARTTLS
+          SMTP_USER:      ${{ secrets.SMTP_USER }}
+          SMTP_PASS:      ${{ secrets.SMTP_PASS }}
+          OPENAI_MODEL:   gpt-4o-mini
+          XAI_MODEL:      grok-4-fast-reasoning
+        run: |
+          if [ -z "${{ secrets.OPENAI_API_KEY }}" ] || [ -z "${{ secrets.XAI_API_KEY }}" ] || [ -z "${{ secrets.SMTP_PASS }}" ]; then
+            echo "Secrets missing -> DRY RUN"
+            npm run test-run
+          else
+            npm start
+          fi
+
+      # Mark/save run-once ONLY for successful scheduled runs (manual runs do NOT set the cache)
+      - name: Mark done today (for cache save)
+        if: github.event_name == 'schedule' && steps.gate.outputs.ok == 'yes' && steps.cache.outputs.cache-hit != 'true' && success()
+        run: |
+          mkdir -p /tmp/catalyst-run-once
+          TZ=America/Los_Angeles date > /tmp/catalyst-run-once/done.txt
+
+      - name: Save run-once cache
+        if: github.event_name == 'schedule' && steps.gate.outputs.ok == 'yes' && steps.cache.outputs.cache-hit != 'true' && success()
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/catalyst-run-once
+          key: catalyst-1245-${{ steps.runonce.outputs.key }}
+
+      # Skipped message ONLY for scheduled runs
+      - name: Skipped (outside window or already ran)
+        if: github.event_name == 'schedule' && (steps.gate.outputs.ok != 'yes' || steps.cache.outputs.cache-hit == 'true')
+        run: |
+          echo "Scheduled tick skipped: not within ${TARGET_H}:${TARGET_M}±${{ env.TOLERANCE_MIN }} (was ${{ steps.gate.outputs.now }} LA) OR already ran on LA date ${{ steps.runonce.outputs.key }}."
