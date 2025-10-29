@@ -1,27 +1,25 @@
 name: Bullet Catalyst v1 (OpenAI + Grok)
-
 on:
   schedule:
-    # Poll every 5 minutes around 10:15 Los_Angeles
-    # 10:15 PDT = 16:15 UTC, 10:15 PST = 17:15 UTC
+    # Poll every 5 minutes, 24/7 (gated to ~10:10 LA / 13:10 NY)
+    # To optimize: Limit to UTC 17-19 (covers PDT/PST 10:10 ± tolerance)
+    # e.g., - cron: "*/5 17-19 * * *"
     - cron: "*/5 * * * *"
   workflow_dispatch: {}
-
 jobs:
   run:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:
-      group: catalyst-0950
+      group: catalyst-1010
       cancel-in-progress: true
     env:
-      # Gate around the target LA time
-      TARGET_H: "09"
-      TARGET_M: "50"
-      TOLERANCE_MIN: "5"   # widen/narrow as you like
-
+      # Gate around the target LA time (10:10 PST/PDT = 13:10 ET/EDT)
+      TARGET_H: "10"
+      TARGET_M: "10"
+      TOLERANCE_MIN: "5" # ±5 min window
     steps:
-      - name: Gate — only run near 09:15 Los_Angeles or when manually dispatched
+      - name: Gate — only run near 10:10 Los_Angeles or when manually dispatched
         id: gate
         shell: bash
         run: |
@@ -35,10 +33,8 @@ jobs:
           TOL=${TOLERANCE_MIN:-5}
           if [ "$ABS" -le "$TOL" ]; then OK=yes; else OK=no; fi
           echo "now=$HM" >> "$GITHUB_OUTPUT"
-          echo "ok=$OK"  >> "$GITHUB_OUTPUT"
-          #echo "Local time LA: $HM (target ${TARGET_H}:${TARGET_M}, ±${TOL} -> ok=$OK)"
+          echo "ok=$OK" >> "$GITHUB_OUTPUT"
           echo "Local time LA: $HM (target ${TARGET_H}:${TARGET_M}, ±${TOL} min -> ok=$OK)"
-
       - name: Debug event/time
         run: |
           echo "event=${{ github.event_name }}"
@@ -46,7 +42,6 @@ jobs:
           date -u '+UTC: %Y-%m-%d %H:%M'
           TZ=America/Los_Angeles date '+LA : %Y-%m-%d %H:%M'
           TZ=America/New_York date '+NY : %Y-%m-%d %H:%M'
-
       # ----- Run-once-per-day guard (LA date) -----
       - name: Compute run-once key (LA)
         id: runonce
@@ -54,44 +49,37 @@ jobs:
         run: |
           TODAY=$(TZ=America/Los_Angeles date +'%Y-%m-%d')
           echo "key=$TODAY" >> "$GITHUB_OUTPUT"
-
       - name: Prepare cache path
         run: mkdir -p /tmp/catalyst-run-once
-
-      - name: Run-once cache
+      - name: Run-once cache (restore)
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: /tmp/catalyst-run-once
-          key: catalyst-0950-${{ steps.runonce.outputs.key }}
-
+          key: catalyst-1010-${{ steps.runonce.outputs.key }}
       # ------------------------------------------------
-
       - uses: actions/checkout@v4
         if: (steps.gate.outputs.ok == 'yes' && steps.cache.outputs.cache-hit != 'true') || github.event_name == 'workflow_dispatch'
-
       - uses: actions/setup-node@v4
         if: (steps.gate.outputs.ok == 'yes' && steps.cache.outputs.cache-hit != 'true') || github.event_name == 'workflow_dispatch'
         with:
           node-version: "20"
-
       - name: Install deps
         if: (steps.gate.outputs.ok == 'yes' && steps.cache.outputs.cache-hit != 'true') || github.event_name == 'workflow_dispatch'
         run: npm i --no-audit --no-fund
-
       - name: Run (dry-run if keys missing)
         if: (steps.gate.outputs.ok == 'yes' && steps.cache.outputs.cache-hit != 'true') || github.event_name == 'workflow_dispatch'
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          XAI_API_KEY:    ${{ secrets.XAI_API_KEY }}
-          EMAIL_FROM:     ${{ secrets.EMAIL_FROM }}
-          EMAIL_TO:       ${{ secrets.EMAIL_TO }}
-          SMTP_HOST:      ${{ secrets.SMTP_HOST }}
-          SMTP_PORT:      ${{ secrets.SMTP_PORT }}     # "465" for SSL, "587" for STARTTLS
-          SMTP_USER:      ${{ secrets.SMTP_USER }}
-          SMTP_PASS:      ${{ secrets.SMTP_PASS }}
-          OPENAI_MODEL:   gpt-4o-mini
-          XAI_MODEL:      grok-4-fast-reasoning
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }} # "465" for SSL, "587" for STARTTLS
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          OPENAI_MODEL: gpt-4o-mini
+          XAI_MODEL: grok-4-fast-reasoning
         run: |
           if [ -z "${{ secrets.OPENAI_API_KEY }}" ] || [ -z "${{ secrets.XAI_API_KEY }}" ] || [ -z "${{ secrets.SMTP_PASS }}" ]; then
             echo "Secrets missing -> running DRY RUN"
@@ -99,7 +87,6 @@ jobs:
           else
             npm start
           fi
-
       - name: Mark done today (for cache save)
         if: (steps.gate.outputs.ok == 'yes' && steps.cache.outputs.cache-hit != 'true') || github.event_name == 'workflow_dispatch'
         run: |
@@ -110,13 +97,11 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: /tmp/catalyst-run-once
-          key: catalyst-0950-${{ steps.runonce.outputs.key }}
+          key: catalyst-1010-${{ steps.runonce.outputs.key }}
       - name: Skipped (outside window or already ran)
         if: (steps.gate.outputs.ok != 'yes' && github.event_name != 'workflow_dispatch') || steps.cache.outputs.cache-hit == 'true'
         run: |
           echo "Either not within ${TARGET_H}:${TARGET_M}±${{ env.TOLERANCE_MIN }} min (was ${{ steps.gate.outputs.now }} LA / ~${{ steps.gate.outputs.now }} adjusted NY) or already ran on LA date ${{ steps.runonce.outputs.key }}. Skipping."
-          
-
       # - name: Skipped (outside window or already ran)
       #   if: (steps.gate.outputs.ok != 'yes' && github.event_name != 'workflow_dispatch') || steps.cache.outputs.cache-hit == 'true'
       #   run: |
