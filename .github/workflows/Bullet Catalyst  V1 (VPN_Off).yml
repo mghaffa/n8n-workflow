@@ -1,7 +1,7 @@
 name: Bullet Catalyst v1 (VPN_Off)
 on:
   schedule:
-    # Poll every 5 minutes, 24/7 (gated to ~7:30 LA / 10:30 NY)
+    # Poll every 5 minutes, 24/7 (gated to ~12:15 LA / 10:30 NY)
     # To optimize: Limit to UTC 18-20 (covers PDT/PST 10:30 ± tolerance)
     # e.g., - cron: "*/5 18-20 * * *"
     - cron: "*/5 * * * *"
@@ -14,12 +14,12 @@ jobs:
       group: catalyst-0730
       cancel-in-progress: true
     env:
-      # Gate around the target LA time (7:30  PST/PDT = 14:05 ET/EDT)
+      # Gate around the target LA time (12:15  PST/PDT = 14:05 ET/EDT)
       TARGET_H: "12"
-      TARGET_M: "05"
+      TARGET_M: "15"
       TOLERANCE_MIN: "5" # ±5 min window
     steps:
-      - name: Gate — only run near 7:30  Los_Angeles or when manually dispatched
+      - name: Gate — only run near 12:15  Los_Angeles or when manually dispatched
         id: gate
         shell: bash
         run: |
