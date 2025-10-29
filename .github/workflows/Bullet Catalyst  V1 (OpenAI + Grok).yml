@@ -1,9 +1,9 @@
 name: Bullet Catalyst v1 (OpenAI + Grok)
 on:
   schedule:
-    # Poll every 5 minutes, 24/7 (gated to ~10:35 LA / 13:35 NY)
-    # To optimize: Limit to UTC 17-19 (covers PDT/PST 10:35 ± tolerance)
-    # e.g., - cron: "*/5 17-19 * * *"
+    # Poll every 5 minutes, 24/7 (gated to ~11:05 LA / 14:05 NY)
+    # To optimize: Limit to UTC 18-20 (covers PDT/PST 11:05 ± tolerance)
+    # e.g., - cron: "*/5 18-20 * * *"
     - cron: "*/5 * * * *"
   workflow_dispatch: {}
 jobs:
@@ -11,15 +11,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:
-      group: catalyst-1035
+      group: catalyst-1105
       cancel-in-progress: true
     env:
-      # Gate around the target LA time (10:35 PST/PDT = 13:35 ET/EDT)
-      TARGET_H: "10"
-      TARGET_M: "35"
+      # Gate around the target LA time (11:05 PST/PDT = 14:05 ET/EDT)
+      TARGET_H: "11"
+      TARGET_M: "05"
       TOLERANCE_MIN: "5" # ±5 min window
     steps:
-      - name: Gate — only run near 10:35 Los_Angeles or when manually dispatched
+      - name: Gate — only run near 11:05 Los_Angeles or when manually dispatched
         id: gate
         shell: bash
         run: |
@@ -56,7 +56,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: /tmp/catalyst-run-once
-          key: catalyst-1035-${{ steps.runonce.outputs.key }}
+          key: catalyst-1105-${{ steps.runonce.outputs.key }}
       # ------------------------------------------------
       - uses: actions/checkout@v4
         if: (steps.gate.outputs.ok == 'yes' && steps.cache.outputs.cache-hit != 'true') || github.event_name == 'workflow_dispatch'
@@ -97,7 +97,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: /tmp/catalyst-run-once
-          key: catalyst-1035-${{ steps.runonce.outputs.key }}
+          key: catalyst-1105-${{ steps.runonce.outputs.key }}
       - name: Skipped (outside window or already ran)
         if: (steps.gate.outputs.ok != 'yes' && github.event_name != 'workflow_dispatch') || steps.cache.outputs.cache-hit == 'true'
         run: |
