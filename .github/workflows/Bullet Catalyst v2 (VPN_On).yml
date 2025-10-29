@@ -1,23 +1,23 @@
-name: Bullet Catalyst v2 (VPN_On)
+name: Bullet Catalyst v1 (VPN_On)
 on:
   schedule:
-    # Poll every 5 min during UTC window covering 11:05 LA ± tol (PDT/PST)
-    - cron: "*/5 18-20 * * *"
+    # Poll every 5 min during UTC window covering 12:45 LA ± tol (PDT/PST)
+    - cron: "*/5 19-21 * * *"
   workflow_dispatch: {}
 jobs:
   run:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:
-      group: catalyst-1105
+      group: catalyst-1245
       cancel-in-progress: true
     env:
-      # Gate around the target LA time (11:05 PST/PDT = 14:05 ET/EDT)
+      # Gate around the target LA time (12:45 PST/PDT = 15:45 ET/EDT)
       TARGET_H: "12"
-      TARGET_M: "25"
-      TOLERANCE_MIN: "15" # Increased to ±15 min for delay tolerance
+      TARGET_M: "45"
+      TOLERANCE_MIN: "15" # ±15 min window for delay tolerance
     steps:
-      - name: Gate — only run near 12:25 Los_Angeles or when manually dispatched
+      - name: Gate — only run near 12:45 Los_Angeles or when manually dispatched
         id: gate
         shell: bash
         run: |
@@ -54,7 +54,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: /tmp/catalyst-run-once
-          key: catalyst-1105-${{ steps.runonce.outputs.key }}
+          key: catalyst-1245-${{ steps.runonce.outputs.key }}
       # ------------------------------------------------
       - uses: actions/checkout@v4
         if: (steps.gate.outputs.ok == 'yes' && steps.cache.outputs.cache-hit != 'true') || github.event_name == 'workflow_dispatch'
@@ -95,7 +95,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: /tmp/catalyst-run-once
-          key: catalyst-1105-${{ steps.runonce.outputs.key }}
+          key: catalyst-1245-${{ steps.runonce.outputs.key }}
       - name: Skipped (outside window or already ran)
         if: (steps.gate.outputs.ok != 'yes' && github.event_name != 'workflow_dispatch') || steps.cache.outputs.cache-hit == 'true'
         run: |
