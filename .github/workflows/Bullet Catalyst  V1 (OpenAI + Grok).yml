@@ -1,8 +1,8 @@
 name: Bullet Catalyst v1 (OpenAI + Grok)
 on:
   schedule:
-    # Poll every 5 minutes, 24/7 (gated to ~10:10 LA / 13:10 NY)
-    # To optimize: Limit to UTC 17-19 (covers PDT/PST 10:10 ± tolerance)
+    # Poll every 5 minutes, 24/7 (gated to ~10:35 LA / 13:35 NY)
+    # To optimize: Limit to UTC 17-19 (covers PDT/PST 10:35 ± tolerance)
     # e.g., - cron: "*/5 17-19 * * *"
     - cron: "*/5 * * * *"
   workflow_dispatch: {}
@@ -11,15 +11,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:
-      group: catalyst-1010
+      group: catalyst-1035
       cancel-in-progress: true
     env:
-      # Gate around the target LA time (10:10 PST/PDT = 13:10 ET/EDT)
+      # Gate around the target LA time (10:35 PST/PDT = 13:35 ET/EDT)
       TARGET_H: "10"
-      TARGET_M: "10"
+      TARGET_M: "35"
       TOLERANCE_MIN: "5" # ±5 min window
     steps:
-      - name: Gate — only run near 10:10 Los_Angeles or when manually dispatched
+      - name: Gate — only run near 10:35 Los_Angeles or when manually dispatched
         id: gate
         shell: bash
         run: |
@@ -56,7 +56,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: /tmp/catalyst-run-once
-          key: catalyst-1010-${{ steps.runonce.outputs.key }}
+          key: catalyst-1035-${{ steps.runonce.outputs.key }}
       # ------------------------------------------------
       - uses: actions/checkout@v4
         if: (steps.gate.outputs.ok == 'yes' && steps.cache.outputs.cache-hit != 'true') || github.event_name == 'workflow_dispatch'
@@ -97,12 +97,12 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: /tmp/catalyst-run-once
-          key: catalyst-1010-${{ steps.runonce.outputs.key }}
+          key: catalyst-1035-${{ steps.runonce.outputs.key }}
       - name: Skipped (outside window or already ran)
         if: (steps.gate.outputs.ok != 'yes' && github.event_name != 'workflow_dispatch') || steps.cache.outputs.cache-hit == 'true'
         run: |
           echo "Either not within ${TARGET_H}:${TARGET_M}±${{ env.TOLERANCE_MIN }} min (was ${{ steps.gate.outputs.now }} LA / ~${{ steps.gate.outputs.now }} adjusted NY) or already ran on LA date ${{ steps.runonce.outputs.key }}. Skipping."
       # - name: Skipped (outside window or already ran)
-      #   if: (steps.gate.outputs.ok != 'yes' && github.event_name != 'workflow_dispatch') || steps.cache.outputs.cache-hit == 'true'
-      #   run: |
-      #     echo "Either not within ${TARGET_H}:${TARGET_M}±${{ env.TOLERANCE_MIN }} (was ${{ steps.gate.outputs.now }}) or already ran on LA date ${{ steps.runonce.outputs.key }}. Skipping."
+      # if: (steps.gate.outputs.ok != 'yes' && github.event_name != 'workflow_dispatch') || steps.cache.outputs.cache-hit == 'true'
+      # run: |
+      # echo "Either not within ${TARGET_H}:${TARGET_M}±${{ env.TOLERANCE_MIN }} (was ${{ steps.gate.outputs.now }}) or already ran on LA date ${{ steps.runonce.outputs.key }}. Skipping."
