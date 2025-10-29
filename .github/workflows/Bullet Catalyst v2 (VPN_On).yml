@@ -1,4 +1,4 @@
-name: Bullet Catalyst v1 (VPN_On)
+name: Bullet Catalyst v2 (VPN_On)
 on:
   schedule:
     # Poll every 5 min during UTC window covering 12:45 LA ± tol (PDT/PST)
