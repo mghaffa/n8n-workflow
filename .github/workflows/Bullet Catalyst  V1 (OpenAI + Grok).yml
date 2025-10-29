@@ -4,7 +4,7 @@ on:
   schedule:
     # Poll every 5 minutes around 10:15 Los_Angeles
     # 10:15 PDT = 16:15 UTC, 10:15 PST = 17:15 UTC
-    - cron: "*/5 16-17 * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch: {}
 
 jobs:
@@ -16,9 +16,9 @@ jobs:
       cancel-in-progress: true
     env:
       # Gate around the target LA time
-      TARGET_H: "11"
-      TARGET_M: "30"
-      TOLERANCE_MIN: "15"   # widen/narrow as you like
+      TARGET_H: "09"
+      TARGET_M: "10"
+      TOLERANCE_MIN: "5"   # widen/narrow as you like
 
     steps:
       - name: Gate — only run near 10:15 Los_Angeles or when manually dispatched
