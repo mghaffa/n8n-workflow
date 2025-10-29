@@ -17,7 +17,7 @@ jobs:
     env:
       # Gate around the target LA time
       TARGET_H: "11"
-      TARGET_M: "15"
+      TARGET_M: "30"
       TOLERANCE_MIN: "15"   # widen/narrow as you like
 
     steps:
