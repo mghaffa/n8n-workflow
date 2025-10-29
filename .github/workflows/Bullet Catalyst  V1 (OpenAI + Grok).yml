@@ -1,4 +1,4 @@
-name: Bullet Catalyst v1 (OpenAI + Grok)
+name: Bullet Catalyst v1 (VPN_Off)
 on:
   schedule:
     # Poll every 5 minutes, 24/7 (gated to ~7:30 LA / 10:30 NY)
