@@ -21,7 +21,7 @@ jobs:
       TOLERANCE_MIN: "5"   # widen/narrow as you like
 
     steps:
-      - name: Gate — only run near 10:15 Los_Angeles or when manually dispatched
+      - name: Gate — only run near 09:10 Los_Angeles or when manually dispatched
         id: gate
         shell: bash
         run: |
