@@ -15,8 +15,8 @@ jobs:
       cancel-in-progress: true
     env:
       # Gate around the target LA time (7:30  PST/PDT = 14:05 ET/EDT)
-      TARGET_H: "7"
-      TARGET_M: "30"
+      TARGET_H: "12"
+      TARGET_M: "05"
       TOLERANCE_MIN: "5" # ±5 min window
     steps:
       - name: Gate — only run near 7:30  Los_Angeles or when manually dispatched
