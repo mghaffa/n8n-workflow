@@ -12,12 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:
-      group: catalyst-1015
+      group: catalyst-0950
       cancel-in-progress: true
     env:
       # Gate around the target LA time
       TARGET_H: "09"
-      TARGET_M: "15"
+      TARGET_M: "50"
       TOLERANCE_MIN: "5"   # widen/narrow as you like
 
     steps:
@@ -32,11 +32,12 @@ jobs:
           TARGET_MIN=$((10#$TARGET_H*60 + 10#$TARGET_M))
           DIFF=$(( NOW_MIN - TARGET_MIN ))
           ABS=${DIFF#-}
-          TOL=${TOLERANCE_MIN:-15}
+          TOL=${TOLERANCE_MIN:-5}
           if [ "$ABS" -le "$TOL" ]; then OK=yes; else OK=no; fi
           echo "now=$HM" >> "$GITHUB_OUTPUT"
           echo "ok=$OK"  >> "$GITHUB_OUTPUT"
-          echo "Local time LA: $HM (target ${TARGET_H}:${TARGET_M}, ±${TOL} -> ok=$OK)"
+          #echo "Local time LA: $HM (target ${TARGET_H}:${TARGET_M}, ±${TOL} -> ok=$OK)"
+          echo "Local time LA: $HM (target ${TARGET_H}:${TARGET_M}, ±${TOL} min -> ok=$OK)"
 
       - name: Debug event/time
         run: |
@@ -44,6 +45,7 @@ jobs:
           echo "cron='${{ github.event.schedule }}'"
           date -u '+UTC: %Y-%m-%d %H:%M'
           TZ=America/Los_Angeles date '+LA : %Y-%m-%d %H:%M'
+          TZ=America/New_York date '+NY : %Y-%m-%d %H:%M'
 
       # ----- Run-once-per-day guard (LA date) -----
       - name: Compute run-once key (LA)
@@ -61,7 +63,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/catalyst-run-once
-          key: catalyst-1015-${{ steps.runonce.outputs.key }}
+          key: catalyst-0950-${{ steps.runonce.outputs.key }}
 
       # ------------------------------------------------
 
@@ -103,8 +105,19 @@ jobs:
         run: |
           mkdir -p /tmp/catalyst-run-once
           TZ=America/Los_Angeles date > /tmp/catalyst-run-once/done.txt
-
+      - name: Save run-once cache
+        if: (steps.gate.outputs.ok == 'yes' && steps.cache.outputs.cache-hit != 'true') || github.event_name == 'workflow_dispatch'
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/catalyst-run-once
+          key: catalyst-0950-${{ steps.runonce.outputs.key }}
       - name: Skipped (outside window or already ran)
         if: (steps.gate.outputs.ok != 'yes' && github.event_name != 'workflow_dispatch') || steps.cache.outputs.cache-hit == 'true'
         run: |
-          echo "Either not within ${TARGET_H}:${TARGET_M}±${{ env.TOLERANCE_MIN }} (was ${{ steps.gate.outputs.now }}) or already ran on LA date ${{ steps.runonce.outputs.key }}. Skipping."
+          echo "Either not within ${TARGET_H}:${TARGET_M}±${{ env.TOLERANCE_MIN }} min (was ${{ steps.gate.outputs.now }} LA / ~${{ steps.gate.outputs.now }} adjusted NY) or already ran on LA date ${{ steps.runonce.outputs.key }}. Skipping."
+          
+
+      # - name: Skipped (outside window or already ran)
+      #   if: (steps.gate.outputs.ok != 'yes' && github.event_name != 'workflow_dispatch') || steps.cache.outputs.cache-hit == 'true'
+      #   run: |
+      #     echo "Either not within ${TARGET_H}:${TARGET_M}±${{ env.TOLERANCE_MIN }} (was ${{ steps.gate.outputs.now }}) or already ran on LA date ${{ steps.runonce.outputs.key }}. Skipping."
