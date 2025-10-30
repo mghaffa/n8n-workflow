@@ -2,8 +2,8 @@ name: Bullet Catalyst v3 (VPN_On)
 
 on:
   schedule:
-    # Poll every 5 min during UTC window covering 12:45 LA ± tol (PDT/PST)
-    # 12:45 PDT = 19:45 UTC, 12:45 PST = 20:45 UTC
+    # Poll every 5 min during UTC window covering 07:55 LA ± tol (PDT/PST)
+    # 07:55 PDT = 19:45 UTC, 07:55 PST = 20:45 UTC
     - cron: "*/5 19-21 * * *"
   workflow_dispatch: {}
 
@@ -12,17 +12,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:
-      group: catalyst-1245
+      group: catalyst-0755
       cancel-in-progress: true
 
     env:
-      # Gate around the target LA time (12:45 PST/PDT = 15:45 ET/EDT)
-      TARGET_H: "12"
+      # Gate around the target LA time (07:55 PST/PDT = 15:45 ET/EDT)
+      TARGET_H: "7"
       TARGET_M: "55"
       TOLERANCE_MIN: "15"    # ±15 min window
 
     steps:
-      - name: Gate — only run near 12:55 Los_Angeles (schedule) or always when manually dispatched
+      - name: Gate — only run near 07:55 Los_Angeles (schedule) or always when manually dispatched
         id: gate
         shell: bash
         run: |
@@ -65,7 +65,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: /tmp/catalyst-run-once
-          key: catalyst-1245-${{ steps.runonce.outputs.key }}
+          key: catalyst-0755-${{ steps.runonce.outputs.key }}
 
       # ------------------------------------------------
       # Heavy steps: run if (scheduled AND in-window AND not already ran today) OR manual dispatch
@@ -118,7 +118,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: /tmp/catalyst-run-once
-          key: catalyst-1245-${{ steps.runonce.outputs.key }}
+          key: catalyst-0755-${{ steps.runonce.outputs.key }}
 
       # Skipped message ONLY for scheduled runs
       - name: Skipped (outside window or already ran)
