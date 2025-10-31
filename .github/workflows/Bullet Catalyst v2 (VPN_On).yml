@@ -13,33 +13,67 @@ jobs:
       cancel-in-progress: true
     env:
       # Gate around the target LA time (07:45 PST/PDT = 15:45 ET/EDT)
+      TZ: America/Los_Angeles
       TARGET_H: "07"
       TARGET_M: "45"
       TOLERANCE_MIN: "15" # ±15 min window for delay tolerance
+
+
     steps:
-      - name: Gate — only run near 07:45 Los_Angeles or when manually dispatched
+      - name: Gate — allow only near 07:45 LA OR manual dispatch
         id: gate
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          HM=$(TZ=America/Los_Angeles date +'%H:%M')
-          H=$(TZ=America/Los_Angeles date +'%H')
-          M=$(TZ=America/Los_Angeles date +'%M')
-          NOW_MIN=$((10#$H*60 + 10#$M))
-          TARGET_MIN=$((10#$TARGET_H*60 + 10#$TARGET_M))
-          DIFF=$(( NOW_MIN - TARGET_MIN ))
-          ABS=${DIFF#-}
-          TOL=${TOLERANCE_MIN:-15}
-          if [ "$ABS" -le "$TOL" ]; then OK=yes; else OK=no; fi
-          echo "now=$HM" >> "$GITHUB_OUTPUT"
-          echo "ok=$OK" >> "$GITHUB_OUTPUT"
-          echo "Local time LA: $HM (target ${TARGET_H}:${TARGET_M}, ±${TOL} min -> ok=$OK)"
-      - name: Debug event/time
-        run: |
-          echo "event=${{ github.event_name }}"
-          echo "cron='${{ github.event.schedule }}'"
-          date -u '+UTC: %Y-%m-%d %H:%M'
-          TZ=America/Los_Angeles date '+LA : %Y-%m-%d %H:%M'
-          TZ=America/New_York date '+NY : %Y-%m-%d %H:%M'
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            OK=yes; REASON="manual dispatch"
+          else
+            H=$(TZ=$TZ date +%H); M=$(TZ=$TZ date +%M)
+            NOW_MIN=$((10#$H*60 + 10#$M))
+            TARGET_MIN=$((10#$TARGET_H*60 + 10#$TARGET_M))
+            DIFF=$(( NOW_MIN - TARGET_MIN ))
+            ABS=${DIFF#-}
+            TOL=${TOLERANCE_MIN:-15}
+            if [ "$ABS" -le "$TOL" ]; then
+              OK=yes; REASON="within ±${TOL}min of ${TARGET_H}:${TARGET_M}"
+            else
+              OK=no;  REASON="outside window (Δ=${DIFF}min)"
+            fi
+          fi
+          HM=$(TZ=$TZ date +'%Y-%m-%d %H:%M')
+          {
+            echo "ok=$OK"
+            echo "now=$HM"
+            echo "reason=$REASON"
+          } >> "$GITHUB_OUTPUT"
+          echo "Gate: ok=$OK reason='$REASON' LA=$HM target=${TARGET_H}:${TARGET_M} ±${TOLERANCE_MIN}m"
+  
+    # steps:
+    #   - name: Gate — only run near 07:45 Los_Angeles or when manually dispatched
+    #     id: gate
+    #     shell: bash
+    #     run: |
+    #       HM=$(TZ=America/Los_Angeles date +'%H:%M')
+    #       H=$(TZ=America/Los_Angeles date +'%H')
+    #       M=$(TZ=America/Los_Angeles date +'%M')
+    #       NOW_MIN=$((10#$H*60 + 10#$M))
+    #       TARGET_MIN=$((10#$TARGET_H*60 + 10#$TARGET_M))
+    #       DIFF=$(( NOW_MIN - TARGET_MIN ))
+    #       ABS=${DIFF#-}
+    #       TOL=${TOLERANCE_MIN:-15}
+    #       if [ "$ABS" -le "$TOL" ]; then OK=yes; else OK=no; fi
+    #       echo "now=$HM" >> "$GITHUB_OUTPUT"
+    #       echo "ok=$OK" >> "$GITHUB_OUTPUT"
+    #       echo "Local time LA: $HM (target ${TARGET_H}:${TARGET_M}, ±${TOL} min -> ok=$OK)"
+    #   - name: Debug event/time
+    #     run: |
+    #       echo "event=${{ github.event_name }}"
+    #       echo "cron='${{ github.event.schedule }}'"
+    #       date -u '+UTC: %Y-%m-%d %H:%M'
+    #       TZ=America/Los_Angeles date '+LA : %Y-%m-%d %H:%M'
+    #       TZ=America/New_York date '+NY : %Y-%m-%d %H:%M'
+    
       # ----- Run-once-per-day guard (LA date) -----
       - name: Compute run-once key (LA)
         id: runonce
