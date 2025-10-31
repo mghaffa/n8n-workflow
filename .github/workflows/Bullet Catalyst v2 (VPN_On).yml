@@ -14,7 +14,7 @@ jobs:
     env:
       # Gate around the target LA time (07:45 PST/PDT = 15:45 ET/EDT)
       TZ: America/Los_Angeles
-      TARGET_H: "07"
+      TARGET_H: "08"
       TARGET_M: "45"
       TOLERANCE_MIN: "15" # ±15 min window for delay tolerance
 
