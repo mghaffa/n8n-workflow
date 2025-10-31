@@ -1,0 +1,76 @@
+name: xAI Probe v3 (Only API)
+
+on:
+  workflow_dispatch:
+    inputs:
+      XAI_MODEL:
+        description: "xAI model to probe"
+        required: false
+        default: "grok-4-fast-reasoning"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    env:
+      XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+      XAI_MODEL: ${{ inputs.XAI_MODEL || 'grok-4-fast-reasoning' }}
+
+    steps:
+      - name: Validate secret
+        run: |
+          if [ -z "${XAI_API_KEY}" ]; then
+            echo "Missing XAI_API_KEY secret" >&2
+            exit 2
+          fi
+
+      - name: Preflight xAI access (small ping)
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          JSON_PAYLOAD=$(cat <<EOF
+          { "model":"${XAI_MODEL}",
+            "messages":[{"role":"user","content":"ping"}],
+            "max_tokens":1
+          }
+          EOF
+          )
+          CODE=$(curl -sS -o resp.json -w "%{http_code}" \
+            -X POST https://api.x.ai/v1/chat/completions \
+            -H "Authorization: Bearer ${XAI_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "${JSON_PAYLOAD}")
+          echo "http_code=$CODE" >> "$GITHUB_OUTPUT"
+
+          STATUS=ok
+          if [ "$CODE" -eq 401 ]; then STATUS=unauthorized; fi
+          if [ "$CODE" -eq 403 ]; then STATUS=forbidden; fi
+          if [ "$CODE" -ge 400 ] && [ "$CODE" -ne 401 ] && [ "$CODE" -ne 403 ]; then STATUS=error; fi
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
+          echo "----- Preflight response ($CODE) -----"
+          cat resp.json || true
+          echo "--------------------------------------"
+
+      - name: Checkout
+        if: steps.preflight.outputs.status == 'ok'
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        if: steps.preflight.outputs.status == 'ok'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Probe xAI (full run)
+        if: steps.preflight.outputs.status == 'ok'
+        env:
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          XAI_MODEL:   ${{ inputs.XAI_MODEL }}
+        run: node runner/xai_probe_v1.mjs
+
+      - name: Skip — no credits or forbidden
+        if: steps.preflight.outputs.status != 'ok'
+        run: |
+          echo "Skipping probe. status=${{ steps.preflight.outputs.status }} http=${{ steps.preflight.outputs.http_code }}"
+          echo "Tip: add credits to your xAI team, then re-run."
