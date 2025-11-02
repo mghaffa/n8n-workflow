@@ -358,12 +358,62 @@ function newsOnlyScores(byTicker){
 }
 
 /* ---------------- 5) Markdown ---------------- */
+// function toMarkdown(topGpt, topGrok, topGroq, newsByTicker, banners = [], providerStatus = "") {
+//   function bulletsFor(t) {
+//     const raw = (newsByTicker.get(t) || []).map(n => n.title || n.snippet);
+//     const cats = raw.filter(Boolean).slice(0, 6).map(x => x.replace(/\s*- (CNBC|Yahoo Finance|CNN|Reuters|Bloomberg).*/i, ""));
+//     return uniqueCaseFold(cats);
+//   }
+//   function fmt(list, key, providerLabel) {
+//     if (!list.length) return "_No items._";
+//     return list.map(it => {
+//       const cats = it.catalysts.length ? it.catalysts : bulletsFor(it.ticker);
+//       const catTxt = cats.length ? "Catalysts:\n" + cats.map(s => "• " + s).join("\n") : "Catalysts: —";
+//       const sent = providerLabel === "GPT"  ? it.sentiment_gpt
+//                  : providerLabel === "Grok" ? it.sentiment_grok
+//                  :                           it.sentiment_groq;
+//       return `**${it.ticker}** — Score:${it[key]?.toFixed?.(1) ?? "-"} (Sentiment:${sent})\n` + catTxt;
+//     }).join("\n\n");
+//   }
+//   const bannerBlock = [providerStatus, ...banners.filter(Boolean)].map(b => b ? `> ${b}` : "").filter(Boolean).join("\n");
+//   const header = bannerBlock ? bannerBlock + "\n\n" : "";
+
+//   return `# Daily Top 10 — Call-Spread Screen (News-driven)
+
+// ${header}## Top 10 — GPT
+
+// ${fmt(topGpt, "score_gpt", "GPT")}
+
+// ## Top 10 — Groq
+
+// ${fmt(topGroq, "score_groq", "Groq")}
+
+// ## Top 10 — Grok (xAI)
+
+// ${fmt(topGrok, "score_grok", "Grok")}
+
+// `;
+// }
+
 function toMarkdown(topGpt, topGrok, topGroq, newsByTicker, banners = [], providerStatus = "") {
   function bulletsFor(t) {
     const raw = (newsByTicker.get(t) || []).map(n => n.title || n.snippet);
     const cats = raw.filter(Boolean).slice(0, 6).map(x => x.replace(/\s*- (CNBC|Yahoo Finance|CNN|Reuters|Bloomberg).*/i, ""));
     return uniqueCaseFold(cats);
   }
+
+  function fmtTickerList(arr) {
+    return arr.map(t => t.ticker).join(", ");
+  }
+
+  const tickerTable = `
+| Model | Top Tickers |
+|-------|-------------|
+| GPT   | ${fmtTickerList(topGpt)} |
+| Groq  | ${fmtTickerList(topGroq)} |
+| Grok  | ${fmtTickerList(topGrok)} |
+`;
+
   function fmt(list, key, providerLabel) {
     if (!list.length) return "_No items._";
     return list.map(it => {
@@ -375,12 +425,15 @@ function toMarkdown(topGpt, topGrok, topGroq, newsByTicker, banners = [], provid
       return `**${it.ticker}** — Score:${it[key]?.toFixed?.(1) ?? "-"} (Sentiment:${sent})\n` + catTxt;
     }).join("\n\n");
   }
+
   const bannerBlock = [providerStatus, ...banners.filter(Boolean)].map(b => b ? `> ${b}` : "").filter(Boolean).join("\n");
   const header = bannerBlock ? bannerBlock + "\n\n" : "";
 
   return `# Daily Top 10 — Call-Spread Screen (News-driven)
 
-${header}## Top 10 — GPT
+${header}${tickerTable}
+
+## Top 10 — GPT
 
 ${fmt(topGpt, "score_gpt", "GPT")}
 
@@ -391,7 +444,6 @@ ${fmt(topGroq, "score_groq", "Groq")}
 ## Top 10 — Grok (xAI)
 
 ${fmt(topGrok, "score_grok", "Grok")}
-
 `;
 }
 
