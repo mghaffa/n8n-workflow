@@ -72,6 +72,7 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          GROQ_API_KEY:   ${{ secrets.GROQ_API_KEY }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
@@ -80,6 +81,8 @@ jobs:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           OPENAI_MODEL: gpt-4o-mini
           XAI_MODEL: grok-4-fast-reasoning
+          GROQ_MODEL:   llama-3.3-70b-versatile
+          GROQ_BASE:    https://api.groq.com/openai/v1
         run: |
           if [ -z "${{ secrets.OPENAI_API_KEY }}" ] || [ -z "${{ secrets.XAI_API_KEY }}" ] || [ -z "${{ secrets.SMTP_PASS }}" ]; then
             echo "Secrets missing -> running DRY RUN"
