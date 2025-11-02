@@ -22,16 +22,27 @@
 #           XAI_MODEL:   ${{ inputs.XAI_MODEL }}
 #         run: node runner/xai_probe_v1.mjs
 
-name: Probe X.AI (Grok)
-  env:
-    XAI_API_KEY: ${{ secrets.XAI_API_KEY }}   # must be an X.AI key (NOT gsk_)
-  run: |
-    curl -sS https://api.x.ai/v1/chat/completions \
-      -H "Authorization: Bearer $XAI_API_KEY" \
-      -H "Content-Type: application/json" \
-      -d '{
-        "model":"grok-4-fast-reasoning",
-        "messages":[{"role":"user","content":"hello"}]
-      }'
+name: Groq Probe v1 (Only API)
 
+on:
+  workflow_dispatch:
+    inputs:
+      GROQ_MODEL:
+        description: "Groq model to probe"
+        required: false
+        default: "llama-3.3-70b-versatile"  # good default
 
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Probe Groq
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}   # put your gsk_ key here
+          GROQ_MODEL:   ${{ inputs.GROQ_MODEL }}
+          GROQ_BASE:    https://api.groq.com/openai/v1
+        run: node runner/groq_probe_v1.mjs
