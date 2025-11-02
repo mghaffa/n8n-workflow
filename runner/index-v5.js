@@ -378,13 +378,14 @@ ${header}## Top 10 — GPT
 
 ${fmt(topGpt, "score_gpt", "GPT")}
 
+## Top 10 — Groq
+
+${fmt(topGroq, "score_groq", "Groq")}
+
 ## Top 10 — Grok (xAI)
 
 ${fmt(topGrok, "score_grok", "Grok")}
 
-## Top 10 — Groq
-
-${fmt(topGroq, "score_groq", "Groq")}
 `;
 }
 
