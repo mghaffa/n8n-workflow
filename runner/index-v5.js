@@ -291,7 +291,13 @@ async function callGroq(prompt) {
   }
 
   const content = r?.data?.choices?.[0]?.message?.content || "{}";
+  console.log("[groq] raw content:", content);
   const json = parseProviderJson(content);
+  if (!json || !Array.isArray(json?.results)) {
+    console.warn("[groq] fallback triggered: invalid or missing results");
+    return { results: [], _err: "parse" };
+}
+
   if (!json) { console.error("[groq] JSON parse failed"); return { results: [], _err:"parse" }; }
   json._ok = true; return json;
 }
@@ -476,6 +482,12 @@ async function main() {
     groqFill = { results: baseTickers.map(t => newsHeur.get(t)).filter(Boolean) };
   }
 
+  console.log("[merge] Results passed into normalizeResults3:");
+  console.log("- GPT  length:", gptFill.results?.length);
+  console.log("- Grok length:", grokFill.results?.length);
+  console.log("- Groq length:", groqFill.results?.length);
+
+  
   const combined = normalizeResults3(baseTickers, gptFill, grokFill, groqFill);
 
   const topGpt   = pick([...combined].sort((a,b) => b.score_gpt  - a.score_gpt ), 10);
