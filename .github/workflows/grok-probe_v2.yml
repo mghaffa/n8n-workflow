@@ -45,4 +45,4 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}   # put your gsk_ key here
           GROQ_MODEL:   ${{ inputs.GROQ_MODEL }}
           GROQ_BASE:    https://api.groq.com/openai/v1
-        run: node runner/grok_probe_v1.mjs
+        run: node runner/xai_probe_v1.mjs
