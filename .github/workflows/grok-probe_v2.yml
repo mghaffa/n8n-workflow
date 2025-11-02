@@ -1,23 +1,37 @@
-name: xAI Probe v1 (Only API)
+# name: xAI Probe v1 (Only API)
 
-on:
-  workflow_dispatch:
-    inputs:
-      XAI_MODEL:
-        description: "xAI model to probe"
-        required: false
-        default: "grok-4-fast-reasoning"
+# on:
+#   workflow_dispatch:
+#     inputs:
+#       XAI_MODEL:
+#         description: "xAI model to probe"
+#         required: false
+#         default: "grok-4-fast-reasoning"
 
-jobs:
-  probe:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - name: Probe xAI
-        env:
-          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
-          XAI_MODEL:   ${{ inputs.XAI_MODEL }}
-        run: node runner/xai_probe_v1.mjs
+# jobs:
+#   probe:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#       - uses: actions/setup-node@v4
+#         with:
+#           node-version: "20"
+#       - name: Probe xAI
+#         env:
+#           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+#           XAI_MODEL:   ${{ inputs.XAI_MODEL }}
+#         run: node runner/xai_probe_v1.mjs
+
+// uses GROQ_API_KEY from your repo secrets
+const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
+  },
+  body: JSON.stringify({
+    model: "llama-3.1-70b-versatile",  // pick a Groq-supported model
+    messages: [{ role: "user", content: "hello" }],
+  }),
+});
+
