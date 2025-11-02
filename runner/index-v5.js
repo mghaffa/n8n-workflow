@@ -267,8 +267,6 @@ async function callGrok(prompt) {
 async function callGroq(prompt) {
   if (!GROQ_API_KEY) { console.warn("[warn] GROQ_API_KEY missing"); return { results: [], _err:"missing key" }; }
 
-  // JSON-object mode is supported on most Groq models via OpenAI-compatible API.
-  // If a model rejects response_format, it will still return valid text and tolerant parser should handle it.
   const body = {
     model: GROQ_MODEL,
     response_format: { type: "json_object" },
@@ -354,7 +352,7 @@ function newsOnlyScores(byTicker){
 }
 
 /* ---------------- 5) Markdown ---------------- */
-function toMarkdown(topGpt, topGrok, topGroq, newsByTicker, banners = []) {
+function toMarkdown(topGpt, topGrok, topGroq, newsByTicker, banners = [], providerStatus = "") {
   function bulletsFor(t) {
     const raw = (newsByTicker.get(t) || []).map(n => n.title || n.snippet);
     const cats = raw.filter(Boolean).slice(0, 6).map(x => x.replace(/\s*- (CNBC|Yahoo Finance|CNN|Reuters|Bloomberg).*/i, ""));
@@ -371,7 +369,7 @@ function toMarkdown(topGpt, topGrok, topGroq, newsByTicker, banners = []) {
       return `**${it.ticker}** — Score:${it[key]?.toFixed?.(1) ?? "-"} (Sentiment:${sent})\n` + catTxt;
     }).join("\n\n");
   }
-  const bannerBlock = banners.filter(Boolean).map(b => `> ${b}`).join("\n");
+  const bannerBlock = [providerStatus, ...banners.filter(Boolean)].map(b => b ? `> ${b}` : "").filter(Boolean).join("\n");
   const header = bannerBlock ? bannerBlock + "\n\n" : "";
 
   return `# Daily Top 10 — Call-Spread Screen (News-driven)
@@ -401,6 +399,17 @@ async function sendEmail(subject, markdown) {
   await transporter.verify();
   await transporter.sendMail({ from: EMAIL_FROM, to: EMAIL_TO, subject, text: markdown });
   console.log("[ok] email sent");
+}
+
+/* ---------------- helper: provider status summary ---------------- */
+function providerStatusSummary(gpt, grok, groq) {
+  function stat(p, label){
+    if (Array.isArray(p?.results) && p.results.length > 0) return `${label}: OK (${p.results.length})`;
+    if (p?._err === "missing key") return `${label}: NO_KEY`;
+    if (p?._err) return `${label}: ${String(p._err).toUpperCase()}`;
+    return `${label}: EMPTY`;
+  }
+  return `${stat(gpt,"GPT")} | ${stat(grok,"Grok")} | ${stat(groq,"Groq")}`;
 }
 
 /* ---------------- main ---------------- */
@@ -472,8 +481,11 @@ async function main() {
   const topGrok  = pick([...combined].sort((a,b) => b.score_grok - a.score_grok), 10);
   const topGroq  = pick([...combined].sort((a,b) => b.score_groq - a.score_groq), 10);
 
-  const md = toMarkdown(topGpt, topGrok, topGroq, byTicker, banners);
-  await sendEmail(`Top 10 Call-Spread Candidates — GPT, Grok & Groq (last ~3w)`, md);
+  const providerStatus = providerStatusSummary(gpt, grok, groq);
+  const md = toMarkdown(topGpt, topGrok, topGroq, byTicker, banners, providerStatus);
+
+  // add provider status to subject for quick visibility
+  await sendEmail(`Top 10 Call-Spread Candidates — GPT, Grok & Groq (last ~3w) [${providerStatus}]`, md);
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
