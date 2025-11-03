@@ -42,6 +42,26 @@ setGroqDebug(true);
 
 console.log("[env] GROQ_DEBUG:", shouldLogGroq());
 
+// Pretty-print (or raw) Groq payloads when debug is enabled.
+function logGroqRaw(content) {
+  // Default to pretty (multiline). You can force raw with GROQ_LOG_MODE=raw
+  const mode = String(process.env.GROQ_LOG_MODE || "pretty").toLowerCase();
+
+  if (mode === "raw") {
+    console.log("[groq] raw content:", content);
+    return;
+  }
+
+  // pretty
+  try {
+    const pretty = JSON.stringify(JSON.parse(String(content)), null, 2);
+    console.log("[groq] raw content:", pretty);
+  } catch {
+    // If not valid JSON, just print as-is (still full, not truncated)
+    console.log("[groq] raw content:", content);
+  }
+}
+
 
 /* ---------------- debug toggle (suggested fix) ---------------- */
 const LOG_RAW_PAYLOADS = asBool(process.env.LOG_RAW_PAYLOADS, false);      //* make it True to get debug for groq *//
@@ -88,17 +108,6 @@ const pick = (arr, n) => arr.slice(0, n);
 function uniqueCaseFold(arr){const seen=new Set();const out=[];for(const v of arr){const k=String(v).toLowerCase().trim();if(!k||seen.has(k))continue;seen.add(k);out.push(v);}return out;}
 
 /* naive name→ticker map */
-// const NAME2TICKER = Object.entries({
-//   'nvidia':'NVDA','intel':'INTC','apple':'AAPL','microsoft':'MSFT',
-//   'advanced micro devices':'AMD','amd':'AMD','tesla':'TSLA','amazon':'AMZN',
-//   'alphabet':'GOOGL','google':'GOOGL','meta':'META','facebook':'META',
-//   'broadcom':'AVGO','taiwan semiconductor':'TSM','tsmc':'TSM','netflix':'NFLX',
-//   'oracle':'ORCL','salesforce':'CRM','ibm':'IBM','walmart':'WMT','nike':'NKE',
-//   'ferrari':'RACE','dell':'DELL','workday':'WDAY','crowdstrike':'CRWD',
-//   'toast':'TOST','alibaba':'BABA','baidu':'BIDU','texas instruments':'TXN',
-//   'micron':'MU','palantir':'PLTR','jpmorgan':'JPM'
-// });
-
 const NAME2TICKER = Object.entries({
   'nvidia': 'NVDA', 'amd': 'AMD', 'advanced micro devices': 'AMD',
   'oracle': 'ORCL', 'broadcom': 'AVGO', 'palantir': 'PLTR', 'cloudflare': 'NET',
@@ -345,7 +354,8 @@ async function callGroq(prompt) {
   const content = r?.data?.choices?.[0]?.message?.content || "{}";
   // SUGGESTED FIX APPLIED: guard raw payload logs behind env toggle
   //if (LOG_RAW_PAYLOADS) console.log("[groq] raw content (preview):", preview(content));//
-  if (shouldLogGroq()) console.log("[groq] raw content (preview):", preview(content));
+  /if (shouldLogGroq()) console.log("[groq] raw content (preview):", preview(content));//
+  if (shouldLogGroq()) logGroqRaw(content);
 
   const json = parseProviderJson(content);
   if (!json || !Array.isArray(json?.results)) {
