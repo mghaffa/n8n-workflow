@@ -25,7 +25,7 @@ const asBool = (v, d=false) => {
 
 
 /* ---------------- debug toggle (suggested fix) ---------------- */
-const LOG_RAW_PAYLOADS = asBool(process.env.LOG_RAW_PAYLOADS, true);      #make it True to get debug for groq
+const LOG_RAW_PAYLOADS = asBool(process.env.LOG_RAW_PAYLOADS, true);      //* make it True to get debug for groq *//
 const preview = (s, n = 600) => {
   const t = String(s ?? "").replace(/\s+/g, " ");
   return t.length > n ? t.slice(0, n) + "…" : t;
