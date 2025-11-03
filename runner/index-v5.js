@@ -61,15 +61,33 @@ const pick = (arr, n) => arr.slice(0, n);
 function uniqueCaseFold(arr){const seen=new Set();const out=[];for(const v of arr){const k=String(v).toLowerCase().trim();if(!k||seen.has(k))continue;seen.add(k);out.push(v);}return out;}
 
 /* naive name→ticker map */
+// const NAME2TICKER = Object.entries({
+//   'nvidia':'NVDA','intel':'INTC','apple':'AAPL','microsoft':'MSFT',
+//   'advanced micro devices':'AMD','amd':'AMD','tesla':'TSLA','amazon':'AMZN',
+//   'alphabet':'GOOGL','google':'GOOGL','meta':'META','facebook':'META',
+//   'broadcom':'AVGO','taiwan semiconductor':'TSM','tsmc':'TSM','netflix':'NFLX',
+//   'oracle':'ORCL','salesforce':'CRM','ibm':'IBM','walmart':'WMT','nike':'NKE',
+//   'ferrari':'RACE','dell':'DELL','workday':'WDAY','crowdstrike':'CRWD',
+//   'toast':'TOST','alibaba':'BABA','baidu':'BIDU','texas instruments':'TXN',
+//   'micron':'MU','palantir':'PLTR','jpmorgan':'JPM'
+// });
+
 const NAME2TICKER = Object.entries({
-  'nvidia':'NVDA','intel':'INTC','apple':'AAPL','microsoft':'MSFT',
-  'advanced micro devices':'AMD','amd':'AMD','tesla':'TSLA','amazon':'AMZN',
-  'alphabet':'GOOGL','google':'GOOGL','meta':'META','facebook':'META',
-  'broadcom':'AVGO','taiwan semiconductor':'TSM','tsmc':'TSM','netflix':'NFLX',
-  'oracle':'ORCL','salesforce':'CRM','ibm':'IBM','walmart':'WMT','nike':'NKE',
-  'ferrari':'RACE','dell':'DELL','workday':'WDAY','crowdstrike':'CRWD',
-  'toast':'TOST','alibaba':'BABA','baidu':'BIDU','texas instruments':'TXN',
-  'micron':'MU','palantir':'PLTR','jpmorgan':'JPM'
+  'nvidia': 'NVDA', 'amd': 'AMD', 'advanced micro devices': 'AMD',
+  'oracle': 'ORCL', 'broadcom': 'AVGO', 'palantir': 'PLTR', 'cloudflare': 'NET',
+  'amazon': 'AMZN', 'alphabet': 'GOOGL', 'google': 'GOOGL', 'microsoft': 'MSFT',
+  'kla': 'KLAC', 'kla corporation': 'KLAC', 'ibm': 'IBM', 'apple': 'AAPL',
+  'tqqq': 'TQQQ', 'intel': 'INTC', 'bulz': 'BULZ', 'costco': 'COST', 'cost': 'COST',
+  'tesla': 'TSLA', 'meta': 'META', 'facebook': 'META', 'servicenow': 'NOW',
+  'netflix': 'NFLX', 'hims': 'HIMS', 'natera': 'NTRA', 'datadog': 'DDOG',
+  'taiwan semiconductor': 'TSM', 'tsmc': 'TSM', 'micron': 'MU', 'salesforce': 'CRM',
+  'teradyne': 'TEM', 'rocket lab': 'RKLB', 'crowdstrike': 'CRWD', 'uvxy': 'UVXY',
+  'unitedhealth': 'UNH', 'jpmorgan': 'JPM', 'abbott': 'ABT', 'beyond meat': 'BYND',
+  'ferrari': 'RACE', 'sofi': 'SOFI', 'dell': 'DELL', 'upstart': 'UPST',
+  'gold': 'GLD', 'gldm': 'GLDM', 'shiny': 'SHNY', 'msci': 'MSCI',
+  'cameco': 'CCJ', 'shopify': 'SHOP', 'ionq': 'IONQ', 'regetti': 'REGTI',
+  'quantum computing': 'QBTS', 'qtum': 'QTUM', 'qubt': 'QUBT',
+  'laesa': 'LAES', 'arqit': 'ARQQ', 'holoride': 'HOLO'
 });
 const TICKER_BLACKLIST = new Set([
   "IN","WITH","AND","THE","FOR","FROM","OVER","AFTER","BEFORE","FIRST","SECOND","THIRD",
