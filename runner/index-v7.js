@@ -341,7 +341,7 @@ async function callGroq(prompt) {
 // }
   const content = r?.data?.choices?.[0]?.message?.content || "{}";
   // SUGGESTED FIX APPLIED: guard raw payload logs behind env toggle
-  /if (LOG_RAW_PAYLOADS) console.log("[groq] raw content (preview):", preview(content));
+  //if (LOG_RAW_PAYLOADS) console.log("[groq] raw content (preview):", preview(content));//
   if (shouldLogGroq()) console.log("[groq] raw content (preview):", preview(content));
 
   const json = parseProviderJson(content);
