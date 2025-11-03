@@ -475,6 +475,116 @@ function newsOnlyScores(byTicker){
 
 // ... other code omitted for brevity ...
 
+// function toMarkdown(topGpt, topGrok, topGroq, newsByTicker, banners = [], providerStatus = "") {
+//   const MAX_NEWS_BULLETS = 6;
+//   const NL = '\n';
+
+//   // Normalize whitespace for email/plaintext
+//   function clean(s) {
+//     let x = String(s || '');
+//     x = x.split('\r\n').join(' ');
+//     x = x.split('\n').join(' ');
+//     x = x.split('\t').join(' ');
+//     x = x.replace(/\s+/g, ' ');
+//     return x.trim();
+//   }
+
+//   // Grok-like "headline — domain" block, de-duped & capped
+//   function newsBulletsWithSource(ticker, n = MAX_NEWS_BULLETS) {
+//     const items = newsByTicker.get(ticker) || [];
+//     const seen = new Set();
+//     const out = [];
+//     for (const it of items) {
+//       const title = clean((it && (it.title || it.snippet)) || '');
+//       if (!title) continue;
+//       const key = title.toLowerCase();
+//       if (seen.has(key)) continue;
+//       seen.add(key);
+
+//       let domain = clean((it && it.source) || '');
+//       if (!domain && it && it.url) {
+//         try {
+//           const host = new URL(it.url).hostname;
+//           domain = host && host.startsWith('www.') ? host.slice(4) : host;
+//         } catch {}
+//       }
+//       out.push(`• ${title}${domain ? ' - ' + domain : ''}`);
+//       if (out.length >= n) break;
+//     }
+//     return out;
+//   }
+
+//   function fmtTickerList(arr) { return arr.map(t => t.ticker).join(', '); }
+
+//   const tickerTable = [
+//     '| Model | Top Tickers |',
+//     '|-------|-------------|',
+//     `| GPT   | ${fmtTickerList(topGpt)} |`,
+//     `| Groq  | ${fmtTickerList(topGroq)} |`,
+//     `| Grok  | ${fmtTickerList(topGrok)} |`,
+//     ''
+//   ].join(NL);
+
+//   function fmt(list, key, providerLabel) {
+//     if (!list.length) return '_No items._';
+//     return list.map(it => {
+//       const sent = providerLabel === 'GPT'  ? it.sentiment_gpt
+//                  : providerLabel === 'Grok' ? it.sentiment_grok
+//                  :                            it.sentiment_groq;
+
+//       // Provider-specific catalysts to keep style closer to Grok
+//       const cats = providerLabel === 'GPT'  ? (it.catalysts_gpt  || [])
+//                  : providerLabel === 'Grok' ? (it.catalysts_grok || [])
+//                  :                            (it.catalysts_groq || []);
+
+//       const catLines = cats.slice(0, MAX_NEWS_BULLETS).map(s => `• ${clean(s)}`);
+//       const newsLines = newsBulletsWithSource(it.ticker);
+
+//       const blocks = [];
+//       if (catLines.length) blocks.push('Catalysts:' + NL + catLines.join(NL));
+//       if (newsLines.length) blocks.push('Top headlines:' + NL + newsLines.join(NL));
+
+//       const scoreVal = it[key];
+//       const score = (scoreVal && typeof scoreVal.toFixed === 'function')
+//         ? scoreVal.toFixed(1)
+//         : (Number.isFinite(scoreVal) ? String(scoreVal) : '-');
+
+//       return `**${it.ticker}** — Score:${score} (Sentiment:${sent})` + NL + blocks.join(NL + NL);
+//     }).join(NL + NL);
+//   }
+
+//   const bannerBlock = [providerStatus, ...banners.filter(Boolean)]
+//     .map(b => b ? `> ${b}` : '')
+//     .filter(Boolean)
+//     .join(NL);
+//   const header = bannerBlock ? bannerBlock + NL + NL : '';
+
+//   return [
+//     '# Daily Top 10 — Call-Spread Screen (News-driven)',
+//     '',
+//     header + tickerTable,
+//     '## Top 10 — GPT',
+//     '',
+//     fmt(topGpt, 'score_gpt', 'GPT'),
+//     '',
+//     '## Top 10 — Groq',
+//     '',
+//     fmt(topGroq, 'score_groq', 'Groq'),
+//     '',
+//     '## Top 10 — Grok (xAI)',
+//     '',
+//     fmt(topGrok, 'score_grok', 'Grok'),
+//     ''
+//   ].join(NL);
+// }
+
+
+// index-v5.js
+// Bullet Catalyst (GitHub runner) — OpenAI (GPT) + xAI (Grok) + Groq screen with clear fallbacks.
+// Flow: 1) Fetch RSS -> 2) Parse tickers -> 3) GPT + Grok + Groq -> 4) Merge/score -> 5) Markdown -> 6) Email
+
+// ... other code omitted for brevity ...
+
 function toMarkdown(topGpt, topGrok, topGroq, newsByTicker, banners = [], providerStatus = "") {
   const MAX_NEWS_BULLETS = 6;
   const NL = '\n';
@@ -678,7 +788,6 @@ ${fmt(topGroq, 'score_groq', 'Groq')}
 ${fmt(topGrok, 'score_grok', 'Grok')}
 `;
 }
-
 
 
 
