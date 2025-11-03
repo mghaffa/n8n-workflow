@@ -238,7 +238,7 @@ async function callOpenAI(prompt) {
   const json = parseProviderJson(content);
   if (!json) { console.error("[openai] JSON parse failed"); return { results: [], _err:"parse" }; }
   json._ok = true; return json;
-}
+  }
 
 /* ---------------- 3B) Grok (x.ai) with chat→responses fallback ---------------- */
 function parseXaiErrorData(data) {
