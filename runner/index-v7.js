@@ -233,12 +233,11 @@ async function callOpenAI(prompt) {
     console.error("[openai] error:", r.data?.error?.message || r.statusText);
     return { results: [], _err:`http ${r.status}` };
   }
-  #const content = r?.data?.choices?.[0]?.message?.content || "{}";
   const content = r?.data?.choices?.[0]?.message?.content || "{}";
   const json = parseProviderJson(content);
   if (!json) { console.error("[openai] JSON parse failed"); return { results: [], _err:"parse" }; }
   json._ok = true; return json;
-  }
+}
 
 /* ---------------- 3B) Grok (x.ai) with chat→responses fallback ---------------- */
 function parseXaiErrorData(data) {
