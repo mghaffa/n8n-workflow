@@ -344,13 +344,28 @@ function normalizeResults3(baseTickers, gpt, grok, groq) {
     const sGROQ = Number.isFinite(Number(c.sentiment)) ? Number(c.sentiment) : 48;
     const cats  = uniqueCaseFold([...(a.catalysts || []), ...(b.catalysts || []), ...(c.catalysts || [])]);
     const bonus = 0.1 * scoreCatalysts(cats); // light news-driven bias
+    // out.push({
+    //   ticker:T,
+    //   sentiment_gpt:sGPT,  score_gpt: clamp(sGPT  + bonus, 0, 100),
+    //   sentiment_grok:sGROK,score_grok:clamp(sGROK + bonus, 0, 100),
+    //   sentiment_groq:sGROQ,score_groq:clamp(sGROQ + bonus, 0, 100),
+    //   catalysts: cats
+    // });
+
     out.push({
-      ticker:T,
-      sentiment_gpt:sGPT,  score_gpt: clamp(sGPT  + bonus, 0, 100),
-      sentiment_grok:sGROK,score_grok:clamp(sGROK + bonus, 0, 100),
-      sentiment_groq:sGROQ,score_groq:clamp(sGROQ + bonus, 0, 100),
-      catalysts: cats
-    });
+      ticker: T,
+      sentiment_gpt: sGPT,
+      score_gpt: clamp(sGPT + bonus, 0, 100),
+      catalysts_gpt: a.catalysts || [],
+      sentiment_grok: sGROK,
+      score_grok: clamp(sGROK + bonus, 0, 100),
+      catalysts_grok: b.catalysts || [],
+      sentiment_groq: sGROQ,
+      score_groq: clamp(sGROQ + bonus, 0, 100),
+      catalysts_groq: c.catalysts || [],
+      // no merged catalysts!
+  });
+
   }
   return out;
 }
@@ -435,7 +450,12 @@ function toMarkdown(topGpt, topGrok, topGroq, newsByTicker, banners = [], provid
   function fmt(list, key, providerLabel) {
     if (!list.length) return "_No items._";
     return list.map(it => {
-      const cats = it.catalysts.length ? it.catalysts : bulletsFor(it.ticker);
+      // const cats = it.catalysts.length ? it.catalysts : bulletsFor(it.ticker);
+      const cats =
+        providerLabel === "GPT"  ? (it.catalysts_gpt || []) :
+        providerLabel === "Grok" ? (it.catalysts_grok || []) :
+                                   (it.catalysts_groq || []);
+
       const catTxt = cats.length ? "Catalysts:\n" + cats.map(s => "• " + s).join("\n") : "Catalysts: —";
       const sent = providerLabel === "GPT"  ? it.sentiment_gpt
                  : providerLabel === "Grok" ? it.sentiment_grok
