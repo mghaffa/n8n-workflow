@@ -61,33 +61,15 @@ const pick = (arr, n) => arr.slice(0, n);
 function uniqueCaseFold(arr){const seen=new Set();const out=[];for(const v of arr){const k=String(v).toLowerCase().trim();if(!k||seen.has(k))continue;seen.add(k);out.push(v);}return out;}
 
 /* naive name→ticker map */
-// const NAME2TICKER = Object.entries({
-//   'nvidia':'NVDA','intel':'INTC','apple':'AAPL','microsoft':'MSFT',
-//   'advanced micro devices':'AMD','amd':'AMD','tesla':'TSLA','amazon':'AMZN',
-//   'alphabet':'GOOGL','google':'GOOGL','meta':'META','facebook':'META',
-//   'broadcom':'AVGO','taiwan semiconductor':'TSM','tsmc':'TSM','netflix':'NFLX',
-//   'oracle':'ORCL','salesforce':'CRM','ibm':'IBM','walmart':'WMT','nike':'NKE',
-//   'ferrari':'RACE','dell':'DELL','workday':'WDAY','crowdstrike':'CRWD',
-//   'toast':'TOST','alibaba':'BABA','baidu':'BIDU','texas instruments':'TXN',
-//   'micron':'MU','palantir':'PLTR','jpmorgan':'JPM'
-// });
-
 const NAME2TICKER = Object.entries({
-  'nvidia': 'NVDA', 'amd': 'AMD', 'advanced micro devices': 'AMD',
-  'oracle': 'ORCL', 'broadcom': 'AVGO', 'palantir': 'PLTR', 'cloudflare': 'NET',
-  'amazon': 'AMZN', 'alphabet': 'GOOGL', 'google': 'GOOGL', 'microsoft': 'MSFT',
-  'kla': 'KLAC', 'kla corporation': 'KLAC', 'ibm': 'IBM', 'apple': 'AAPL',
-  'tqqq': 'TQQQ', 'intel': 'INTC', 'bulz': 'BULZ', 'costco': 'COST', 'cost': 'COST',
-  'tesla': 'TSLA', 'meta': 'META', 'facebook': 'META', 'servicenow': 'NOW',
-  'netflix': 'NFLX', 'hims': 'HIMS', 'natera': 'NTRA', 'datadog': 'DDOG',
-  'taiwan semiconductor': 'TSM', 'tsmc': 'TSM', 'micron': 'MU', 'salesforce': 'CRM',
-  'teradyne': 'TEM', 'rocket lab': 'RKLB', 'crowdstrike': 'CRWD', 'uvxy': 'UVXY',
-  'unitedhealth': 'UNH', 'jpmorgan': 'JPM', 'abbott': 'ABT', 'beyond meat': 'BYND',
-  'ferrari': 'RACE', 'sofi': 'SOFI', 'dell': 'DELL', 'upstart': 'UPST',
-  'gold': 'GLD', 'gldm': 'GLDM', 'shiny': 'SHNY', 'msci': 'MSCI',
-  'cameco': 'CCJ', 'shopify': 'SHOP', 'ionq': 'IONQ', 'regetti': 'REGTI',
-  'quantum computing': 'QBTS', 'qtum': 'QTUM', 'qubt': 'QUBT',
-  'laesa': 'LAES', 'arqit': 'ARQQ', 'holoride': 'HOLO'
+  'nvidia':'NVDA','intel':'INTC','apple':'AAPL','microsoft':'MSFT',
+  'advanced micro devices':'AMD','amd':'AMD','tesla':'TSLA','amazon':'AMZN',
+  'alphabet':'GOOGL','google':'GOOGL','meta':'META','facebook':'META',
+  'broadcom':'AVGO','taiwan semiconductor':'TSM','tsmc':'TSM','netflix':'NFLX',
+  'oracle':'ORCL','salesforce':'CRM','ibm':'IBM','walmart':'WMT','nike':'NKE',
+  'ferrari':'RACE','dell':'DELL','workday':'WDAY','crowdstrike':'CRWD',
+  'toast':'TOST','alibaba':'BABA','baidu':'BIDU','texas instruments':'TXN',
+  'micron':'MU','palantir':'PLTR','jpmorgan':'JPM'
 });
 const TICKER_BLACKLIST = new Set([
   "IN","WITH","AND","THE","FOR","FROM","OVER","AFTER","BEFORE","FIRST","SECOND","THIRD",
@@ -309,13 +291,7 @@ async function callGroq(prompt) {
   }
 
   const content = r?.data?.choices?.[0]?.message?.content || "{}";
-  console.log("[groq] raw content:", content);
   const json = parseProviderJson(content);
-  if (!json || !Array.isArray(json?.results)) {
-    console.warn("[groq] fallback triggered: invalid or missing results");
-    return { results: [], _err: "parse" };
-}
-
   if (!json) { console.error("[groq] JSON parse failed"); return { results: [], _err:"parse" }; }
   json._ok = true; return json;
 }
@@ -376,62 +352,12 @@ function newsOnlyScores(byTicker){
 }
 
 /* ---------------- 5) Markdown ---------------- */
-// function toMarkdown(topGpt, topGrok, topGroq, newsByTicker, banners = [], providerStatus = "") {
-//   function bulletsFor(t) {
-//     const raw = (newsByTicker.get(t) || []).map(n => n.title || n.snippet);
-//     const cats = raw.filter(Boolean).slice(0, 6).map(x => x.replace(/\s*- (CNBC|Yahoo Finance|CNN|Reuters|Bloomberg).*/i, ""));
-//     return uniqueCaseFold(cats);
-//   }
-//   function fmt(list, key, providerLabel) {
-//     if (!list.length) return "_No items._";
-//     return list.map(it => {
-//       const cats = it.catalysts.length ? it.catalysts : bulletsFor(it.ticker);
-//       const catTxt = cats.length ? "Catalysts:\n" + cats.map(s => "• " + s).join("\n") : "Catalysts: —";
-//       const sent = providerLabel === "GPT"  ? it.sentiment_gpt
-//                  : providerLabel === "Grok" ? it.sentiment_grok
-//                  :                           it.sentiment_groq;
-//       return `**${it.ticker}** — Score:${it[key]?.toFixed?.(1) ?? "-"} (Sentiment:${sent})\n` + catTxt;
-//     }).join("\n\n");
-//   }
-//   const bannerBlock = [providerStatus, ...banners.filter(Boolean)].map(b => b ? `> ${b}` : "").filter(Boolean).join("\n");
-//   const header = bannerBlock ? bannerBlock + "\n\n" : "";
-
-//   return `# Daily Top 10 — Call-Spread Screen (News-driven)
-
-// ${header}## Top 10 — GPT
-
-// ${fmt(topGpt, "score_gpt", "GPT")}
-
-// ## Top 10 — Groq
-
-// ${fmt(topGroq, "score_groq", "Groq")}
-
-// ## Top 10 — Grok (xAI)
-
-// ${fmt(topGrok, "score_grok", "Grok")}
-
-// `;
-// }
-
 function toMarkdown(topGpt, topGrok, topGroq, newsByTicker, banners = [], providerStatus = "") {
   function bulletsFor(t) {
     const raw = (newsByTicker.get(t) || []).map(n => n.title || n.snippet);
     const cats = raw.filter(Boolean).slice(0, 6).map(x => x.replace(/\s*- (CNBC|Yahoo Finance|CNN|Reuters|Bloomberg).*/i, ""));
     return uniqueCaseFold(cats);
   }
-
-  function fmtTickerList(arr) {
-    return arr.map(t => t.ticker).join(", ");
-  }
-
-  const tickerTable = `
-| Model | Top Tickers |
-|-------|-------------|
-| GPT   | ${fmtTickerList(topGpt)} |
-| Groq  | ${fmtTickerList(topGroq)} |
-| Grok  | ${fmtTickerList(topGrok)} |
-`;
-
   function fmt(list, key, providerLabel) {
     if (!list.length) return "_No items._";
     return list.map(it => {
@@ -443,25 +369,22 @@ function toMarkdown(topGpt, topGrok, topGroq, newsByTicker, banners = [], provid
       return `**${it.ticker}** — Score:${it[key]?.toFixed?.(1) ?? "-"} (Sentiment:${sent})\n` + catTxt;
     }).join("\n\n");
   }
-
   const bannerBlock = [providerStatus, ...banners.filter(Boolean)].map(b => b ? `> ${b}` : "").filter(Boolean).join("\n");
   const header = bannerBlock ? bannerBlock + "\n\n" : "";
 
   return `# Daily Top 10 — Call-Spread Screen (News-driven)
 
-${header}${tickerTable}
-
-## Top 10 — GPT
+${header}## Top 10 — GPT
 
 ${fmt(topGpt, "score_gpt", "GPT")}
-
-## Top 10 — Groq
-
-${fmt(topGroq, "score_groq", "Groq")}
 
 ## Top 10 — Grok (xAI)
 
 ${fmt(topGrok, "score_grok", "Grok")}
+
+## Top 10 — Groq
+
+${fmt(topGroq, "score_groq", "Groq")}
 `;
 }
 
@@ -552,12 +475,6 @@ async function main() {
     groqFill = { results: baseTickers.map(t => newsHeur.get(t)).filter(Boolean) };
   }
 
-  console.log("[merge] Results passed into normalizeResults3:");
-  console.log("- GPT  length:", gptFill.results?.length);
-  console.log("- Grok length:", grokFill.results?.length);
-  console.log("- Groq length:", groqFill.results?.length);
-
-  
   const combined = normalizeResults3(baseTickers, gptFill, grokFill, groqFill);
 
   const topGpt   = pick([...combined].sort((a,b) => b.score_gpt  - a.score_gpt ), 10);
