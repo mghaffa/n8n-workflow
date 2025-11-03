@@ -467,23 +467,13 @@ function newsOnlyScores(byTicker){
 // `;
 // }
 
-// index-v5.js
-// Bullet Catalyst (GitHub runner) — OpenAI (GPT) + xAI (Grok) + Groq screen with clear fallbacks.
-// Flow: 1) Fetch RSS -> 2) Parse tickers -> 3) GPT + Grok + Groq -> 4) Merge/score -> 5) Markdown -> 6) Email
 
-// ... other code omitted for brevity ...
-
-// index-v5.js
-// Bullet Catalyst (GitHub runner) — OpenAI (GPT) + xAI (Grok) + Groq screen with clear fallbacks.
-// Flow: 1) Fetch RSS -> 2) Parse tickers -> 3) GPT + Grok + Groq -> 4) Merge/score -> 5) Markdown -> 6) Email
-
-// ... other code omitted for brevity ...
 
 function toMarkdown(topGpt, topGrok, topGroq, newsByTicker, banners = [], providerStatus = "") {
   const MAX_NEWS_BULLETS = 6;
   const NL = '\n';
 
-  // Keep bullets tidy in email/plaintext
+  // Normalize whitespace for email/plaintext
   function clean(s) {
     let x = String(s || '');
     x = x.split('\r\n').join(' ');
@@ -493,7 +483,7 @@ function toMarkdown(topGpt, topGrok, topGroq, newsByTicker, banners = [], provid
     return x.trim();
   }
 
-  // Build a Grok-like news block: headline + " - domain"; deduped, capped.
+  // Grok-like "headline — domain" block, de-duped & capped
   function newsBulletsWithSource(ticker, n = MAX_NEWS_BULLETS) {
     const items = newsByTicker.get(ticker) || [];
     const seen = new Set();
@@ -512,7 +502,6 @@ function toMarkdown(topGpt, topGrok, topGroq, newsByTicker, banners = [], provid
           domain = host && host.startsWith('www.') ? host.slice(4) : host;
         } catch {}
       }
-
       out.push(`• ${title}${domain ? ' - ' + domain : ''}`);
       if (out.length >= n) break;
     }
@@ -537,14 +526,12 @@ function toMarkdown(topGpt, topGrok, topGroq, newsByTicker, banners = [], provid
                  : providerLabel === 'Grok' ? it.sentiment_grok
                  :                            it.sentiment_groq;
 
-      // Keep provider-specific catalysts (closer to Grok style)
+      // Provider-specific catalysts to keep style closer to Grok
       const cats = providerLabel === 'GPT'  ? (it.catalysts_gpt  || [])
                  : providerLabel === 'Grok' ? (it.catalysts_grok || [])
                  :                            (it.catalysts_groq || []);
 
-      const catLines  = cats.slice(0, MAX_NEWS_BULLETS).map(s => `• ${clean(s)}`);
-
-      // Always append a Grok-like "Top headlines" block with headline + domain
+      const catLines = cats.slice(0, MAX_NEWS_BULLETS).map(s => `• ${clean(s)}`);
       const newsLines = newsBulletsWithSource(it.ticker);
 
       const blocks = [];
@@ -585,103 +572,6 @@ function toMarkdown(topGpt, topGrok, topGroq, newsByTicker, banners = [], provid
   ].join(NL);
 }
 
-  // Build a Grok-like news block: headline + " - domain"; deduped, capped.
-  function newsBulletsWithSource(ticker, n = MAX_NEWS_BULLETS) {
-    const items = (newsByTicker.get(ticker) || []);
-    const seen = new Set();
-    const out = [];
-    for (const it of items) {
-      const title = clean((it && (it.title || it.snippet)) || "");
-      if (!title) continue;
-      const key = title.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-
-      let domain = clean((it && it.source) || "");
-      if (!domain && it && it.url) {
-        try {
-          const host = new URL(it.url).hostname;
-          domain = host && host.startsWith('www.') ? host.slice(4) : host;
-        } catch {}
-      }
-
-      out.push('• ' + title + (domain ? ' - ' + domain : ''));
-      if (out.length >= n) break;
-    }
-    return out;
-  }
-
-  function fmtTickerList(arr) { return arr.map(t => t.ticker).join(', '); }
-
-  const tickerTable = `
-| Model | Top Tickers |
-|-------|-------------|
-| GPT   | ${fmtTickerList(topGpt)} |
-| Groq  | ${fmtTickerList(topGroq)} |
-| Grok  | ${fmtTickerList(topGrok)} |
-`;
-
-  function fmt(list, key, providerLabel) {
-    if (!list.length) return "_No items._";
-    return list.map(it => {
-      const sent = providerLabel === 'GPT'  ? it.sentiment_gpt
-                 : providerLabel === 'Grok' ? it.sentiment_grok
-                 :                            it.sentiment_groq;
-
-      // Keep provider-specific catalysts (closer to Grok style)
-      const cats = providerLabel === 'GPT'  ? (it.catalysts_gpt  || [])
-                 : providerLabel === 'Grok' ? (it.catalysts_grok || [])
-                 :                            (it.catalysts_groq || []);
-
-      const catLines  = (cats || []).slice(0, MAX_NEWS_BULLETS).map(s => '• ' + clean(s));
-
-      // Always append a Grok-like "Top headlines" block with headline + domain
-      const newsLines = newsBulletsWithSource(it.ticker);
-
-      const blocks = [];
-      if (catLines.length) {
-        blocks.push('Catalysts:
-' + catLines.join('
-'));
-      }
-      if (newsLines.length) {
-        blocks.push('Top headlines:
-' + newsLines.join('
-'));
-      }
-
-      return `**${it.ticker}** — Score:${it[key]?.toFixed?.(1) ?? '-'} (Sentiment:${sent})
-` + blocks.join('
-
-');
-    }).join('
-
-');
-  }
-
-  const bannerBlock = [providerStatus, ...banners.filter(Boolean)].map(b => b ? `> ${b}` : '').filter(Boolean).join('
-');
-  const header = bannerBlock ? bannerBlock + '
-
-' : '';
-
-  return `# Daily Top 10 — Call-Spread Screen (News-driven)
-
-${header}${tickerTable}
-
-## Top 10 — GPT
-
-${fmt(topGpt, 'score_gpt', 'GPT')}
-
-## Top 10 — Groq
-
-${fmt(topGroq, 'score_groq', 'Groq')}
-
-## Top 10 — Grok (xAI)
-
-${fmt(topGrok, 'score_grok', 'Grok')}
-`;
-}
 
 
 
