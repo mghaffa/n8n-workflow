@@ -40,6 +40,9 @@ function shouldLogGroq() {
 // (Optional) show what we'll do at startup
 console.log("[env] GROQ_DEBUG:", shouldLogGroq());
 
+// >>> ADD THIS LINE to force debug for manual runs:
+setGroqDebug(true);
+
 /* ---------------- debug toggle (suggested fix) ---------------- */
 const LOG_RAW_PAYLOADS = asBool(process.env.LOG_RAW_PAYLOADS, false);      //* make it True to get debug for groq *//
 const preview = (s, n = 600) => {
