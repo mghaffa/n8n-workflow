@@ -23,9 +23,25 @@ const asBool = (v, d=false) => {
   return ["1","true","yes","y","on"].includes(s);
 };
 
+/* ---------------- debug helpers ---------------- */
+// Runtime override: call setGroqDebug(true) anywhere before/while running.
+export function setGroqDebug(on = true) {
+  globalThis.__GROQ_DEBUG__ = !!on;
+}
+
+// Single source of truth for the toggle.
+// Priority: runtime flag -> CLI flags -> env var (LOG_RAW_PAYLOADS)
+function shouldLogGroq() {
+  if (globalThis.__GROQ_DEBUG__ === true) return true;
+  if (process.argv.includes('--debug-groq') || process.argv.includes('--debug') || process.argv.includes('-dg')) return true;
+  return asBool(process.env.LOG_RAW_PAYLOADS, false);
+}
+
+// (Optional) show what we'll do at startup
+console.log("[env] GROQ_DEBUG:", shouldLogGroq());
 
 /* ---------------- debug toggle (suggested fix) ---------------- */
-const LOG_RAW_PAYLOADS = asBool(process.env.LOG_RAW_PAYLOADS, true);      //* make it True to get debug for groq *//
+const LOG_RAW_PAYLOADS = asBool(process.env.LOG_RAW_PAYLOADS, false);      //* make it True to get debug for groq *//
 const preview = (s, n = 600) => {
   const t = String(s ?? "").replace(/\s+/g, " ");
   return t.length > n ? t.slice(0, n) + "…" : t;
@@ -325,7 +341,8 @@ async function callGroq(prompt) {
 // }
   const content = r?.data?.choices?.[0]?.message?.content || "{}";
   // SUGGESTED FIX APPLIED: guard raw payload logs behind env toggle
-  if (LOG_RAW_PAYLOADS) console.log("[groq] raw content (preview):", preview(content));
+  /if (LOG_RAW_PAYLOADS) console.log("[groq] raw content (preview):", preview(content));
+  if (shouldLogGroq()) console.log("[groq] raw content (preview):", preview(content));
 
   const json = parseProviderJson(content);
   if (!json || !Array.isArray(json?.results)) {
