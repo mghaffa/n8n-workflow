@@ -34,14 +34,14 @@ export function setGroqDebug(on = true) {
 function shouldLogGroq() {
   if (globalThis.__GROQ_DEBUG__ === true) return true;
   if (process.argv.includes('--debug-groq') || process.argv.includes('--debug') || process.argv.includes('-dg')) return true;
-  return asBool(process.env.LOG_RAW_PAYLOADS, false);
+  return ["1","true","yes","y","on"].includes(String(process.env.LOG_RAW_PAYLOADS||"").trim().toLowerCase());
 }
-
-// (Optional) show what we'll do at startup
-console.log("[env] GROQ_DEBUG:", shouldLogGroq());
 
 // >>> ADD THIS LINE to force debug for manual runs:
 setGroqDebug(true);
+
+console.log("[env] GROQ_DEBUG:", shouldLogGroq());
+
 
 /* ---------------- debug toggle (suggested fix) ---------------- */
 const LOG_RAW_PAYLOADS = asBool(process.env.LOG_RAW_PAYLOADS, false);      //* make it True to get debug for groq *//
