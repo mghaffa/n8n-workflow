@@ -23,6 +23,14 @@ const asBool = (v, d=false) => {
   return ["1","true","yes","y","on"].includes(s);
 };
 
+
+/* ---------------- debug toggle (suggested fix) ---------------- */
+const LOG_RAW_PAYLOADS = asBool(process.env.LOG_RAW_PAYLOADS, false);
+const preview = (s, n = 600) => {
+  const t = String(s ?? "").replace(/\s+/g, " ");
+  return t.length > n ? t.slice(0, n) + "…" : t;
+};
+
 /* ---------------- config ---------------- */
 const OPENAI_API_KEY = envTrim("OPENAI_API_KEY");
 const XAI_API_KEY    = envTrim("XAI_API_KEY");
@@ -225,6 +233,7 @@ async function callOpenAI(prompt) {
     console.error("[openai] error:", r.data?.error?.message || r.statusText);
     return { results: [], _err:`http ${r.status}` };
   }
+  #const content = r?.data?.choices?.[0]?.message?.content || "{}";
   const content = r?.data?.choices?.[0]?.message?.content || "{}";
   const json = parseProviderJson(content);
   if (!json) { console.error("[openai] JSON parse failed"); return { results: [], _err:"parse" }; }
@@ -308,13 +317,22 @@ async function callGroq(prompt) {
     return { results: [], _err:`http ${r.status}`, _msg: msg };
   }
 
+//   const content = r?.data?.choices?.[0]?.message?.content || "{}";
+//   console.log("[groq] raw content:", content);
+//   const json = parseProviderJson(content);
+//   if (!json || !Array.isArray(json?.results)) {
+//     console.warn("[groq] fallback triggered: invalid or missing results");
+//     return { results: [], _err: "parse" };
+// }
   const content = r?.data?.choices?.[0]?.message?.content || "{}";
-  console.log("[groq] raw content:", content);
+  // SUGGESTED FIX APPLIED: guard raw payload logs behind env toggle
+  if (LOG_RAW_PAYLOADS) console.log("[groq] raw content (preview):", preview(content));
+
   const json = parseProviderJson(content);
   if (!json || !Array.isArray(json?.results)) {
     console.warn("[groq] fallback triggered: invalid or missing results");
     return { results: [], _err: "parse" };
-}
+  }
 
   if (!json) { console.error("[groq] JSON parse failed"); return { results: [], _err:"parse" }; }
   json._ok = true; return json;
@@ -671,7 +689,9 @@ function toMarkdown(topGpt, topGrok, topGroq, newsByTicker, banners = [], provid
     '# Daily Top 10 — Call-Spread Screen (News-driven)',
     '',
     header + tickerTable,
+    HR1, HR2, HR3,
     '## Top 10 — GPT',
+    HR3, HR2, HR1,
     '',
     fmt(topGpt, 'score_gpt', 'GPT'),
     '',
