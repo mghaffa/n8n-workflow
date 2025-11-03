@@ -38,7 +38,7 @@ function shouldLogGroq() {
 }
 
 // >>> ADD THIS LINE to force debug for manual runs:
-setGroqDebug(true);
+setGroqDebug(false);
 
 console.log("[env] GROQ_DEBUG:", shouldLogGroq());
 
