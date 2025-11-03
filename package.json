@@ -2,7 +2,7 @@
   "name": "bullet-catalyst-runner",
   "version": "1.0.0",
   "type": "module",
-  "main": "runner/index-v5.js",
+  "main": "runner/index-v6.js",
   "dependencies": {
     "axios": "^1.7.4",
     "nodemailer": "^6.9.13",
@@ -10,7 +10,7 @@
     "fast-xml-parser": "^4.5.0"
   },
   "scripts": {
-    "start": "node runner/index-v5.js",
-    "test-run": "node runner/index-v5.js --dry-run"
+    "start": "node runner/index-v6.js",
+    "test-run": "node runner/index-v6.js --dry-run"
   }
 }
