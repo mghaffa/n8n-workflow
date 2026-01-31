@@ -33,7 +33,7 @@ jobs:
           SMTP_USER:      ${{ secrets.SMTP_USER }}
           SMTP_PASS:      ${{ secrets.SMTP_PASS }}
           #OPENAI_MODEL:   gpt-4o-mini
-          OPENAI_MODEL:   gpt-5-mini
+          OPENAI_MODEL:   gpt-4o
           XAI_MODEL:      grok-4-fast-reasoning
         run: |
           if [ -z "${{ secrets.OPENAI_API_KEY }}" ] || [ -z "${{ secrets.XAI_API_KEY }}" ] || [ -z "${{ secrets.SMTP_PASS }}" ]; then
