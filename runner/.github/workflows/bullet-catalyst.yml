@@ -32,7 +32,7 @@ jobs:
           SMTP_USER:      ${{ secrets.SMTP_USER }}
           SMTP_PASS:      ${{ secrets.SMTP_PASS }}
           #OPENAI_MODEL:   gpt-4o-mini
-          OPENAI_MODEL:   gpt-5-mini
+          OPENAI_MODEL:   gpt-4o
           XAI_MODEL:      grok-4-fast-reasoning
         run: |
           # Show which envs are present (no secret values are printed)
