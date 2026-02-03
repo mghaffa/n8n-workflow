@@ -4,9 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       GPT_MODEL:
-        description: "GPT model to probe"
+        description: "Model to probe"
         required: false
-        default: "gpt-4o-mini"  # good default
+        default: "gpt-4o-mini"
+      OPENAI_BASE:
+        description: "Optional override (OpenAI base)"
+        required: false
+        default: "https://api.openai.com/v1"
 
 jobs:
   probe:
@@ -16,9 +20,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Probe GPT
+
+      - name: Probe OpenAI
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}   # put your gsk_ key here
-          OPENAI_MODEL:   ${{ inputs.OPENAI_MODEL }}
-          GPT_BASE:    https://api.groq.com/openai/v1
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL:   ${{ inputs.GPT_MODEL }}
+          OPENAI_BASE:    ${{ inputs.OPENAI_BASE }}
         run: node runner/gpt_probe_v1.mjs
