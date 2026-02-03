@@ -20,5 +20,5 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}   # put your gsk_ key here
           OPENAI_MODEL:   ${{ inputs.OPENAI_MODEL }}
-          #GPT_BASE:    https://api.groq.com/openai/v1
+          GPT_BASE:    https://api.groq.com/openai/v1
         run: node runner/gpt_probe_v1.mjs
