@@ -1,0 +1,24 @@
+name: GPT Probe v1 (Only API)
+
+on:
+  workflow_dispatch:
+    inputs:
+      GPT_MODEL:
+        description: "GPT model to probe"
+        required: false
+        default: "gpt-4o-mini"  # good default
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Probe GPT
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}   # put your gsk_ key here
+          OPENAI_MODEL:   ${{ inputs.OPENAI_MODEL }}
+          #GPT_BASE:    https://api.groq.com/openai/v1
+        run: node runner/gpt_probe_v1.mjs
