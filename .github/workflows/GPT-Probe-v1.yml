@@ -6,8 +6,8 @@ on:
       GPT_MODEL:
         description: "Model to probe"
         required: false
-        #default: "gpt-4o-mini"
-        default: "gpt-5.2"
+        default: "gpt-4o-mini"
+        #default: "gpt-5.2"
       OPENAI_BASE:
         description: "Optional override (OpenAI base)"
         required: false
